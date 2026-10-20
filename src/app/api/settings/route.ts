@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         [portfolioId, USER_ID]
       );
       if (!portfolio) return NextResponse.json({ error: 'Portfolio not found' }, { status: 404 });
-      if (portfolio.type === 'REAL' && allowAutonomous === true) {
+      if (portfolio.type === 'REAL' && (allowAutonomous === true || allowAutonomous === 1)) {
         return NextResponse.json({ error: 'Autonomous live trading is disabled until real broker execution is implemented and verified.' }, { status: 403 });
       }
       const pctFields = [maxPositionPct, maxExposurePct, minCashPct];
