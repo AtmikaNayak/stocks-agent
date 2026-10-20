@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    setupFiles: ['./tests/setup.ts'],
     // Test files share one SQLite database; run them sequentially to avoid concurrent startup migrations.
     pool: 'threads',
     poolOptions: {
