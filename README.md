@@ -132,7 +132,7 @@ The simulator estimates transaction costs using configured rates. These are illu
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+ or 22+
+- Node.js 22+ (required by the current better-sqlite3 dependency)
 - npm 9+
 
 ### Installation & Database Initialization
