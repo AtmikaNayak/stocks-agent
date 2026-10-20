@@ -57,10 +57,15 @@ export class MarketDataService implements IMarketDataProvider {
     const quoteAgeMs = Date.now() - pointTimestamp;
     const maxQuoteAgeMs = 5 * 24 * 60 * 60 * 1000;
     const timestampInvalid = !Number.isFinite(pointTimestamp) || quoteAgeMs < -5 * 60 * 1000;
-    const isStale = latestPoint.freshness_status === 'STALE' ||
+    const supportedFreshness = new Set<DataFreshness>([
+      'LIVE', 'DELAYED_15M', 'EOD', 'HISTORICAL', 'SYNTHETIC', 'STALE'
+    ]);
+    const freshnessKnown = supportedFreshness.has(latestPoint.freshness_status);
+    const isStale = !freshnessKnown ||
+      latestPoint.freshness_status === 'STALE' ||
       timestampInvalid ||
       (latestPoint.freshness_status !== 'SYNTHETIC' && quoteAgeMs > maxQuoteAgeMs);
-    const quoteFreshness: DataFreshness = latestPoint.freshness_status === 'SYNTHETIC'
+    const quoteFreshness: DataFreshness = latestPoint.freshness_status === 'SYNTHETIC' && freshnessKnown
       ? 'SYNTHETIC'
       : isStale ? 'STALE' : latestPoint.freshness_status;
 
