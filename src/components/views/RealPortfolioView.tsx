@@ -75,7 +75,7 @@ export default function RealPortfolioView({
           <div className="max-w-md mx-auto space-y-2">
             <h2 className="text-base font-bold text-white">Live Broker API Integration Inactive</h2>
             <p className="text-xs text-slate-300 leading-relaxed">
-              In strict accordance with SEBI guidelines and regulatory risk controls, live real-money trading is disabled by default. No real funds can be moved without explicit multi-factor broker authentication.
+              Live broker authentication and order execution are not implemented in this build. This screen cannot connect to a broker or place real-money orders; use the virtual simulator.
             </p>
           </div>
 
