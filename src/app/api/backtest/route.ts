@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/db';
 import backtestEngine from '@/lib/backtesting/engine';
+import { ValidationError } from '@/lib/validation';
 
 export async function GET() {
   const backtests = db.query(`
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, result });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const status = err instanceof ValidationError ? 400 : 500;
+    return NextResponse.json({ error: err.message }, { status });
   }
 }

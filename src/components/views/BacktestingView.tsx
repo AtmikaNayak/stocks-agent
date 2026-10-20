@@ -133,20 +133,27 @@ export default function BacktestingView() {
       {activeResult && (
         <div className="rounded-xl border border-indigo-500/40 bg-indigo-950/20 p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
-            <h3 className="font-bold text-sm text-white">Backtest Results (Run #{activeResult.id})</h3>
-            <span className="text-xs px-2 py-0.5 rounded font-mono bg-indigo-500/30 text-indigo-300">
-              Out-of-Sample Validated
+            <h3 className="font-bold text-sm text-white">Simulation results (Run #{activeResult.id})</h3>
+            <span className="text-xs px-2 py-0.5 rounded font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Not out-of-sample validated
             </span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="rounded-lg bg-black/45 p-3">
               <span className="text-ink-2 block">Total Return</span>
-              <span className="text-lg font-bold text-emerald-400">+{activeResult.totalReturnPct}%</span>
+              <span className={`text-lg font-bold ${activeResult.totalReturnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {activeResult.totalReturnPct >= 0 ? '+' : ''}{activeResult.totalReturnPct}%
+              </span>
             </div>
             <div className="rounded-lg bg-black/45 p-3">
               <span className="text-ink-2 block">Sharpe Ratio</span>
-              <span className="text-lg font-bold text-white">{activeResult.sharpeRatio}</span>
+              <span className="text-lg font-bold text-white">
+                {activeResult.sharpeRatio === null ? 'Not reported' : activeResult.sharpeRatio}
+              </span>
+              <span className="text-[10px] text-ink-3 block">
+                {activeResult.ratiosReliable ? `${activeResult.totalTrades} trades` : 'Too few trades to annualise'}
+              </span>
             </div>
             <div className="rounded-lg bg-black/45 p-3">
               <span className="text-ink-2 block">Max Drawdown</span>
@@ -158,8 +165,36 @@ export default function BacktestingView() {
             </div>
           </div>
 
+          {/* Benchmark and annualised growth are only shown when they are real. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="rounded-lg border border-white/[0.08] bg-black/30 p-3">
+              <span className="text-ink-3 block">Annualised growth (CAGR)</span>
+              <span className="font-semibold text-ink">
+                {activeResult.cagrPct === null ? 'Not reported — sample too short' : `${activeResult.cagrPct}%`}
+              </span>
+            </div>
+            <div className="rounded-lg border border-white/[0.08] bg-black/30 p-3">
+              <span className="text-ink-3 block">NIFTY 50 benchmark / alpha</span>
+              <span className="font-semibold text-ink">
+                {activeResult.benchmarkReturnPct === null ? 'Not available — no index feed' : `${activeResult.benchmarkReturnPct}%`}
+              </span>
+            </div>
+            <div className="rounded-lg border border-white/[0.08] bg-black/30 p-3">
+              <span className="text-ink-3 block">Data used</span>
+              <span className="font-semibold text-ink">
+                {activeResult.dataQuality?.isSynthetic ? 'Synthetic demo candles' : activeResult.dataQuality?.providers?.join(', ') || 'Unknown'}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-[11px] leading-relaxed text-ink-3 rounded-lg border border-white/[0.07] bg-black/30 p-3">
+            {activeResult.dataQuality?.disclosure}
+            {activeResult.cagrPct === null && ' CAGR is withheld because the sample spans less than a year.'}
+            {activeResult.benchmarkReturnPct === null && ' Alpha is withheld because no index price series is stored in this build.'}
+          </p>
+
           <div>
-            <h4 className="text-xs font-bold text-ink-2 mb-2">Simulated Out-of-Sample Trades:</h4>
+            <h4 className="text-xs font-bold text-ink-2 mb-2">Simulated trades:</h4>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
@@ -208,6 +243,9 @@ export default function BacktestingView() {
                 <div>Sharpe: <strong className="text-white">{b.sharpe_ratio}</strong></div>
                 <div>Drawdown: <strong className="text-rose-400">-{b.max_drawdown_pct}%</strong></div>
                 <div>Trades: <strong className="text-ink-2">{b.total_trades}</strong></div>
+                <div className="text-[10px] px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  {b.out_of_sample_tested === 1 ? 'Out-of-sample tested' : 'Not validated'}
+                </div>
               </div>
             </div>
           ))}
