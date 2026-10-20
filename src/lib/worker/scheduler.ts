@@ -16,15 +16,20 @@ export class BackgroundWorkerScheduler {
         statusMessage = `Session: ${session.session}. ${session.message}`;
       } else if (jobName === 'portfolio_valuation_worker') {
         // Re-evaluate MTM for all open positions across portfolios
-        const positions = db.query<{ id: string; portfolio_id: string; symbol: string; quantity: number; average_buy_price: number }>(`
-          SELECT p.id, p.portfolio_id, a.symbol, p.quantity, p.average_buy_price
+        const positions = db.query<{ id: string; portfolio_id: string; portfolio_type: 'REAL' | 'VIRTUAL'; symbol: string; quantity: number; average_buy_price: number }>(`
+          SELECT p.id, p.portfolio_id, p.portfolio_type, a.symbol, p.quantity, p.average_buy_price
           FROM positions p
           JOIN assets a ON p.asset_id = a.id
+          JOIN portfolios pf ON pf.id = p.portfolio_id
         `);
 
+        let updatedPositions = 0;
         for (const pos of positions) {
+          // A real portfolio must be valued from an authenticated broker/market feed.
+          // This build has no such adapter; never rewrite real holdings using demo data.
+          if (pos.portfolio_type === 'REAL') continue;
           const quote = await marketData.getQuote(pos.symbol);
-          if (quote) {
+          if (!quote || quote.freshness === 'STALE') continue;
             const mktVal = Math.round(pos.quantity * quote.price * 100) / 100;
             const cost = pos.quantity * pos.average_buy_price;
             const unrealised = Math.round((mktVal - cost) * 100) / 100;
@@ -39,9 +44,10 @@ export class BackgroundWorkerScheduler {
                 last_updated_at = datetime('now')
               WHERE id = ?
             `, [quote.price, mktVal, unrealised, unrealisedPct, pos.id]);
+            updatedPositions += 1;
           }
         }
-        statusMessage = `Re-evaluated ${positions.length} active positions.`;
+        statusMessage = `Re-evaluated ${updatedPositions} virtual positions; real portfolios skipped because broker valuation is not implemented.`;
       } else if (jobName === 'risk_safeguard_checks') {
         // Check portfolios for drawdown limits or loss breaches
         const portfolios = db.query<{ id: string; user_id: string; total_value: number; initial_capital: number; current_cash: number }>(
@@ -85,18 +91,24 @@ export class BackgroundWorkerScheduler {
         statusMessage = `Reviewed ${theses.length} active theses.`;
       } else if (jobName === 'order_reconciliation_engine') {
         // Reconcile cash ledger entries with portfolio current_cash
-        const ports = db.query<{ id: string; current_cash: number }>('SELECT id, current_cash FROM portfolios');
+        const ports = db.query<{ id: string; type: 'REAL' | 'VIRTUAL'; current_cash: number }>(
+          'SELECT id, type, current_cash FROM portfolios'
+        );
+        let reconciled = 0;
         for (const port of ports) {
+          // Real cash reconciliation requires broker-confirmed balances and fills;
+          // local ledger totals alone are not authoritative for a Demat account.
+          if (port.type === 'REAL') continue;
           const sumRow = db.queryOne<{ total_ledger: number }>(
             'SELECT COALESCE(SUM(amount), 0) as total_ledger FROM cash_ledger_entries WHERE portfolio_id = ?',
             [port.id]
           );
           if (sumRow && Math.abs(sumRow.total_ledger - port.current_cash) > 0.01) {
-            // Reconciled discrepancy
             db.execute("UPDATE portfolios SET current_cash = ?, updated_at = datetime('now') WHERE id = ?", [sumRow.total_ledger, port.id]);
+            reconciled += 1;
           }
         }
-        statusMessage = 'Reconciled cash ledgers across all portfolios.';
+        statusMessage = `Virtual ledger reconciliation complete. ${reconciled} virtual cash discrepancy/discrepancies corrected; real accounts skipped until broker reconciliation exists.`;
       }
 
       // Update scheduled_jobs record
