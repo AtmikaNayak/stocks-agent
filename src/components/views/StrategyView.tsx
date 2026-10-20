@@ -72,15 +72,15 @@ export default function StrategyView({ onSelectView }: Props) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
             <Compass className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Strategy Builder & Versioned Lifecycle</h1>
-            <p className="text-xs text-slate-400">
-              Rigorous strategy lifecycle: Backtest &rarr; Out-of-Sample &rarr; Shadow &rarr; Paper &rarr; Approval &rarr; Live.
+            <h1 className="text-lg font-bold text-white">Strategies</h1>
+            <p className="text-xs text-ink-2">
+              The rules a strategy follows, and the checks it must pass before anyone relies on it. In this build, the final step (live) is disabled.
             </p>
           </div>
         </div>
@@ -96,20 +96,20 @@ export default function StrategyView({ onSelectView }: Props) {
       {/* Strategy Cards */}
       <div className="space-y-4">
         {strategies.map((strat) => (
-          <div key={strat.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div key={strat.id} className="card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-base text-white">{strat.name}</h3>
-                  <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-mono">
+                  <span className="text-[10px] bg-white/[0.06] text-ink-2 px-2 py-0.5 rounded font-mono">
                     {strat.horizon}
                   </span>
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5">{strat.description}</p>
+                <p className="text-xs text-ink-2 mt-0.5">{strat.description}</p>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Active Version: <strong className="text-white font-mono">{strat.activeVersion}</strong></span>
+                <span className="text-xs text-ink-2">Active Version: <strong className="text-white font-mono">{strat.activeVersion}</strong></span>
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
                     strat.status === 'APPROVED_LIVE'
@@ -124,20 +124,20 @@ export default function StrategyView({ onSelectView }: Props) {
 
             {/* Parameters Matrix */}
             <div>
-              <span className="text-xs font-semibold text-slate-400 block mb-2">Mathematical Strategy Parameters:</span>
+              <span className="text-xs font-semibold text-ink-2 block mb-2">Mathematical Strategy Parameters:</span>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
                 {Object.entries(strat.parameters).map(([key, val]) => (
-                  <div key={key} className="rounded-lg border border-slate-800 bg-slate-950 p-2.5">
-                    <span className="text-[10px] text-slate-500 block truncate font-sans">{key.replace(/_/g, ' ')}</span>
-                    <span className="font-bold text-slate-200 mt-0.5 block">{val}</span>
+                  <div key={key} className="rounded-lg border border-white/[0.08] bg-black/30 p-2.5">
+                    <span className="text-[10px] text-ink-3 block truncate font-sans">{key.replace(/_/g, ' ')}</span>
+                    <span className="font-bold text-ink mt-0.5 block">{val}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-1 text-xs text-slate-400">
+            <div className="flex items-center justify-between pt-1 text-xs text-ink-2">
               <div>
-                Evidence: <span className="text-slate-300 italic">{strat.auditEvidence}</span>
+                Evidence: <span className="text-ink-2 italic">{strat.auditEvidence}</span>
               </div>
               <button
                 onClick={() => onSelectView('backtesting')}

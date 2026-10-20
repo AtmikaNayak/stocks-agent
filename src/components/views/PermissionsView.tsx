@@ -18,48 +18,53 @@ export default function PermissionsView({ currentControlMode, onUpdateMode }: Pr
   const [mode, setMode] = useState(currentControlMode || 'COPILOT');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const controlModes = [
     {
       id: 'MANUAL',
-      name: 'Mode 1: Manual',
-      desc: 'You research, decide, and place orders. The AI acts only as an informative research advisor with risk data.',
-      level: 'ZERO AUTOMATION'
+      name: 'Watch only',
+      desc: 'You research, decide and place every order yourself. The AI only shares information.',
+      level: 'You decide'
     },
     {
       id: 'COPILOT',
-      name: 'Mode 2: AI Copilot (Default Recommended)',
-      desc: 'The AI researches and generates structured investment proposals. You manually review, approve, or reject each order.',
-      level: 'ASSISTED'
+      name: 'AI suggests, you decide (recommended)',
+      desc: 'The AI researches and explains an idea. You review it and choose whether to place the order.',
+      level: 'You decide'
     },
     {
       id: 'SUPERVISED',
-      name: 'Mode 3: Supervised Automation',
-      desc: 'AI monitors continuously and can manage rebalancing tasks within narrow permissions. Orders require confirmation if risk thresholds are near.',
-      level: 'MODERATE'
+      name: 'AI helps with rebalancing',
+      desc: 'The AI keeps an eye on the portfolio and proposes small adjustments. You still confirm orders when a limit is close.',
+      level: 'Some help'
     },
     {
       id: 'AUTONOMOUS_PAPER',
-      name: 'Mode 4: Autonomous Paper Trading',
-      desc: 'The AI manages the virtual ₹25,000 portfolio autonomously within risk limits. Real Demat remains 100% untouched.',
-      level: 'VIRTUAL FULL'
+      name: 'Fully automated (practice money only)',
+      desc: 'The AI manages the ₹25,000 practice portfolio within the safety rules. Your real account is never touched.',
+      level: 'Practice only'
     },
     {
       id: 'AUTHORISED_LIVE',
-      name: 'Mode 5: Authorised Live Automation',
-      desc: 'AI may submit eligible live orders ONLY after explicit user activation, successful broker integration, and compliance checks.',
-      level: 'LIVE CAUTION'
+      name: 'Live automation (not available)',
+      desc: 'Would allow real orders. This build has no broker connection, so the server rejects this choice.',
+      level: 'Unavailable'
     }
   ];
 
   const handleSave = async (newMode: string) => {
     setLoading(true);
     setSuccess(false);
+    setError(null);
     try {
       await onUpdateMode(newMode);
       setMode(newMode);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setSuccess(false);
+      setError(err?.message || 'That setting could not be saved.');
     } finally {
       setLoading(false);
     }
@@ -68,22 +73,27 @@ export default function PermissionsView({ currentControlMode, onUpdateMode }: Pr
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
             <Sliders className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Autonomy Controls & Permissions</h1>
-            <p className="text-xs text-slate-400">
-              Configure precisely how much autonomy the AI is granted across your virtual and real portfolios.
+            <h1 className="text-lg font-bold text-white">Automation controls</h1>
+            <p className="text-xs text-ink-2">
+              Decide how much the AI may do on its own. Practice trading can be automated; real-money automation stays locked.
             </p>
           </div>
         </div>
 
         {success && (
           <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-lg font-semibold flex items-center gap-1">
-            <CheckCircle2 className="h-3.5 w-3.5" /> Updated Successfully
+            <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+          </span>
+        )}
+        {error && (
+          <span className="max-w-xs text-xs bg-rose-500/10 text-rose-300 border border-rose-500/30 px-3 py-1 rounded-lg font-medium flex items-center gap-1">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {error}
           </span>
         )}
       </div>
@@ -99,14 +109,14 @@ export default function PermissionsView({ currentControlMode, onUpdateMode }: Pr
               className={`rounded-xl border p-4 cursor-pointer transition ${
                 isSelected
                   ? 'border-blue-500 bg-blue-950/20 shadow-md'
-                  : 'border-slate-800 bg-slate-900/60 hover:bg-slate-800/40'
+                  : 'border-white/[0.08] bg-[#0f1420]/80 hover:bg-white/[0.04]'
               }`}
             >
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
                   <div
                     className={`h-4 w-4 rounded-full border flex items-center justify-center ${
-                      isSelected ? 'border-blue-500 bg-blue-600' : 'border-slate-600'
+                      isSelected ? 'border-blue-500 bg-blue-600' : 'border-white/[0.18]'
                     }`}
                   >
                     {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
@@ -119,13 +129,13 @@ export default function PermissionsView({ currentControlMode, onUpdateMode }: Pr
                       ? 'bg-amber-500/20 text-amber-300'
                       : isSelected
                       ? 'bg-blue-500/20 text-blue-300'
-                      : 'bg-slate-800 text-slate-400'
+                      : 'bg-white/[0.06] text-ink-2'
                   }`}
                 >
                   {m.level}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 pl-6 leading-relaxed">{m.desc}</p>
+              <p className="text-xs text-ink-2 pl-6 leading-relaxed">{m.desc}</p>
             </div>
           );
         })}
@@ -135,10 +145,10 @@ export default function PermissionsView({ currentControlMode, onUpdateMode }: Pr
       <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-4 text-xs space-y-2">
         <div className="flex items-center gap-2 text-amber-400 font-bold">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>Regulatory Notice on Mode 5 (Authorised Live Automation)</span>
+          <span>Why live automation cannot be switched on</span>
         </div>
-        <p className="text-slate-300 leading-relaxed">
-          Mode 5 can never be activated implicitly. Selecting it enforces server-side validation ensuring: (1) Official broker API authenticated, (2) SEBI statutory compliance signed, (3) Daily loss circuit limits configured, and (4) Emergency stop disengaged.
+        <p className="text-ink-2 leading-relaxed">
+          Real-money automation needs a working broker connection, confirmed fills and account reconciliation. None of that exists in this build, so the server refuses the request instead of quietly pretending to save it. Until then, every practice order stays inside the fixed safety limits.
         </p>
       </div>
     </div>

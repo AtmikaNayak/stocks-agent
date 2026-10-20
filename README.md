@@ -111,11 +111,13 @@ The simulator estimates transaction costs using configured rates. These are illu
 
 ## 🎛️ Control Modes in This Build
 
-1. **Mode 1: Manual** - User directs all orders; AI provides research and risk validation.
-2. **Mode 2: AI Copilot** (Default) - AI researches and formulates proposals; user reviews and approves each order.
-3. **Mode 3: Supervised Automation** - AI monitors and manages rebalancing within strict limits; user notified.
-4. **Mode 4: Autonomous Paper Trading** - AI autonomously manages the virtual ₹25,000 simulator.
-5. **Authorised Live Automation** - UI/data model placeholder only. It is rejected by the API and must remain disabled until a real broker adapter, credentials handling, order submission, status polling, and fill/balance reconciliation are implemented and independently tested.
+The interface uses friendlier labels than the internal mode names; the mapping is in brackets.
+
+1. **Mode 1: Manual** [“Watch only”] - User directs all orders; AI provides research and risk validation.
+2. **Mode 2: AI Copilot** [“AI suggests, you decide”] (Default) - AI researches and formulates proposals; user reviews and approves each order.
+3. **Mode 3: Supervised Automation** [“AI helps with rebalancing”] - AI monitors and manages rebalancing within strict limits; user notified.
+4. **Mode 4: Autonomous Paper Trading** [“Fully automated (practice money only)”] - AI autonomously manages the virtual ₹25,000 simulator.
+5. **Authorised Live Automation** [shown as unavailable] - UI/data model placeholder only. It is rejected by the API and must remain disabled until a real broker adapter, credentials handling, order submission, status polling, and fill/balance reconciliation are implemented and independently tested.
 
 ---
 
@@ -130,6 +132,21 @@ The simulator estimates transaction costs using configured rates. These are illu
 - The repository currently contains a SQLite file under `data/investpilot.db`. Back it up before running migrations or seed commands; seed re-runs are now non-destructive to existing portfolio rows.
 - This is a single-user local prototype and does not yet implement authenticated application sessions/authorization for its API routes. The npm scripts bind to `127.0.0.1` by default; do not expose the app to a LAN or the public internet until authentication, authorization, CSRF protection, and secret-management controls are implemented.
 - The current dependency tree reports npm security advisories, including critical/high severity items, and the current Next.js version is flagged as vulnerable. Run a reviewed dependency update and retest before any deployment; do not use `npm audit fix --force` blindly.
+
+## 🧭 Interface guide (beginner-first)
+
+The app is organised around what a first-time investor actually needs, not around internal module names:
+
+- **Everyday** — Home, Learn the basics, Practice portfolio, Explore shares, Ideas & decisions, Safety & limits.
+- **More tools** — research, AI assistants, orders and receipts, performance, backtesting, strategies, the read-only real account, broker status, automation controls, updates, system status and settings.
+
+House conventions in the UI:
+- Money is always shown in ₹ with Indian digit grouping; profit/loss is the only place green and red appear.
+- Plain words are preferred to jargon, and any technical term is one tap away in the built-in glossary (help icon in the top bar).
+- The top status strip states plainly that this is a practice build: simulated money, demo prices, and no real orders. A separate read-only banner appears when the real account is selected.
+- Every important figure is described in a sentence next to it, and empty states explain the next step instead of showing a blank table.
+
+---
 
 ## 🚀 Getting Started
 
@@ -178,6 +195,7 @@ InvestPilot AI 2.0 includes automated test suites covering:
 - Strict financial isolation between Real and Virtual portfolios (`tests/execution-isolation.test.ts`)
 - Four AI agents coordination and grounded Q&A (`tests/agents.test.ts`)
 - Quantitative backtesting with no look-ahead bias (`tests/backtesting.test.ts`)
+- Money/percentage formatting and plain-language helpers used across the UI (`tests/format.test.ts`)
 
 Run all tests:
 ```bash

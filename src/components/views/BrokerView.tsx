@@ -54,15 +54,15 @@ export default function BrokerView({ onRefresh }: Props) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <Plug className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Broker Integration Status (Unavailable)</h1>
-            <p className="text-xs text-slate-400">
-              No live broker adapter is implemented. Do not enter broker credentials in this demo build.
+            <h1 className="text-lg font-bold text-white">Broker connection</h1>
+            <p className="text-xs text-ink-2">
+              Not available in this build. There is no broker login, order routing or fill reconciliation, so please do not enter real credentials.
             </p>
           </div>
         </div>
@@ -97,9 +97,9 @@ export default function BrokerView({ onRefresh }: Props) {
           </div>
         </div>
         {activeConnection ? (
-          <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4 space-y-3">
-            <p className="text-xs font-semibold text-slate-200">An old broker connection record exists in the local database, but it is not proof of an authenticated session.</p>
-            <p className="text-xs text-slate-400">Stored record: {activeConnection.broker_name} · {activeConnection.client_id} · status {activeConnection.status}</p>
+          <div className="rounded-lg border border-white/[0.12] bg-black/30 p-4 space-y-3">
+            <p className="text-xs font-semibold text-ink">An old broker connection record exists in the local database, but it is not proof of an authenticated session.</p>
+            <p className="text-xs text-ink-2">Stored record: {activeConnection.broker_name} · {activeConnection.client_id} · status {activeConnection.status}</p>
             <button
               onClick={handleDisconnect}
               disabled={actionLoading}
@@ -110,9 +110,9 @@ export default function BrokerView({ onRefresh }: Props) {
             </button>
           </div>
         ) : (
-          <p className="text-xs text-slate-300">Status: no verified broker session. Real-money execution stays blocked; use the virtual simulator.</p>
+          <p className="text-xs text-ink-2">Status: no broker session. Real-money execution stays blocked — use the practice portfolio.</p>
         )}
-        {loading && <p className="text-xs text-slate-500">Checking saved connection records…</p>}
+        {loading && <p className="text-xs text-ink-3">Checking saved connection records…</p>}
       </div>
     </div>
   );

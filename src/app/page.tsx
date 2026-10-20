@@ -34,6 +34,8 @@ export default function HomePage() {
   const [activePortfolioType, setActivePortfolioType] = useState<'REAL' | 'VIRTUAL'>('VIRTUAL');
   const [experienceMode, setExperienceMode] = useState<'BEGINNER' | 'ADVANCED'>('BEGINNER');
   const [emergencyStopEnabled, setEmergencyStopEnabled] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [researchSymbol, setResearchSymbol] = useState('RELIANCE');
 
   // Modals state
   const [isEmergencyStopOpen, setIsEmergencyStopOpen] = useState(false);
@@ -123,16 +125,23 @@ export default function HomePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'update_mode', controlMode: mode })
     });
-    if (res.ok) loadData();
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({} as { error?: string }));
+      throw new Error(payload.error || 'That setting could not be saved.');
+    }
+    await loadData();
   };
 
   const handleToggleExperienceMode = async (mode: 'BEGINNER' | 'ADVANCED') => {
+    const previous = experienceMode;
     setExperienceMode(mode);
-    await fetch('/api/settings', {
+    const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'update_mode', experienceMode: mode })
     });
+    // Keep the interface honest: if the preference could not be saved, go back.
+    if (!res.ok) setExperienceMode(previous);
   };
 
   const currentPortfolio = portfolios.find((p) => p.type === activePortfolioType) || portfolios[0] || {
@@ -144,19 +153,25 @@ export default function HomePage() {
     invested_value: 0
   };
 
+  const virtualPortfolio = portfolios.find((p) => p.type === 'VIRTUAL');
+
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950 font-sans text-slate-100">
-      {/* Sidebar Navigation */}
+    <div className="relative z-10 flex min-h-screen bg-transparent font-sans text-ink">
+      {/* Navigation */}
       <Sidebar
         currentView={currentView}
         onSelectView={(v) => setCurrentView(v)}
         activePortfolioType={activePortfolioType}
         experienceMode={experienceMode}
+        practiceValue={virtualPortfolio?.total_value}
+        mobileOpen={isMobileNavOpen}
+        onCloseMobile={() => setIsMobileNavOpen(false)}
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Navbar
+          onOpenMobileNav={() => setIsMobileNavOpen(true)}
           activePortfolioType={activePortfolioType}
           onTogglePortfolioType={(t) => setActivePortfolioType(t)}
           experienceMode={experienceMode}
@@ -173,7 +188,8 @@ export default function HomePage() {
         />
 
         {/* Dynamic View Body */}
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        <main className="mx-auto w-full max-w-[1220px] flex-1 px-4 py-5 sm:px-6 sm:py-6">
+          <div key={currentView} className="rise-in">
           {currentView === 'dashboard' && (
             <DashboardView
               data={{
@@ -192,6 +208,10 @@ export default function HomePage() {
               }}
               onOpenProposalModal={() => setIsProposalModalOpen(true)}
               experienceMode={experienceMode}
+              onSelectAsset={(symbol: string) => {
+                setResearchSymbol(symbol);
+                setCurrentView('research');
+              }}
             />
           )}
 
@@ -231,6 +251,7 @@ export default function HomePage() {
               quotes={quotes}
               session={marketSession}
               onSelectAsset={(sym) => {
+                setResearchSymbol(sym);
                 setCurrentView('research');
               }}
               onOpenOrderModal={(asset) => {
@@ -242,7 +263,8 @@ export default function HomePage() {
 
           {currentView === 'research' && (
             <ResearchView
-              initialSymbol="RELIANCE"
+              key={researchSymbol}
+              initialSymbol={researchSymbol}
               onOpenOrderModal={(asset) => {
                 setSelectedAssetForOrder(asset);
                 setIsOrderModalOpen(true);
@@ -333,6 +355,14 @@ export default function HomePage() {
           {currentView === 'system-health' && (
             <SystemHealthView />
           )}
+          </div>
+
+          {/* Persistent, honest footer */}
+          <footer className="mt-10 border-t border-white/[0.06] pt-4 pb-2 text-[11px] leading-relaxed text-ink-3/80">
+            InvestPilot is a learning and simulation tool. Prices, fundamentals and news in this build are
+            demo fixtures, not live exchange data. Nothing here is investment advice, and real-money
+            trading is intentionally switched off.
+          </footer>
         </main>
       </div>
 

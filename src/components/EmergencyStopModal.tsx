@@ -29,10 +29,10 @@ export default function EmergencyStopModal({ isOpen, isTriggered, onClose, onCon
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-md rounded-xl border border-red-500/40 bg-slate-900 p-6 shadow-2xl">
+      <div className="relative w-full max-w-md rounded-xl border border-red-500/40 bg-[#0f1420] p-6 shadow-2xl">
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 text-slate-400 hover:text-white"
+          className="absolute right-4 top-4 text-ink-2 hover:text-white"
         >
           <X className="h-5 w-5" />
         </button>
@@ -40,21 +40,21 @@ export default function EmergencyStopModal({ isOpen, isTriggered, onClose, onCon
         <div className="flex items-center gap-3 text-red-400 mb-4">
           <ShieldAlert className="h-8 w-8 shrink-0 text-red-500" />
           <h2 className="text-xl font-bold tracking-tight">
-            {isTriggered ? 'Disengage Emergency Stop' : 'Trigger Emergency Kill-Switch'}
+            {isTriggered ? 'Allow trading again?' : 'Pause all trading?'}
           </h2>
         </div>
 
-        <div className="space-y-4 text-sm text-slate-300">
+        <div className="space-y-4 text-sm text-ink-2">
           {isTriggered ? (
             <p>
-              Emergency stop is currently <strong className="text-red-400">ACTIVE</strong>. Disengaging will permit the AI Copilot and execution agents to resume processing eligible order submissions.
+              Trading is currently <strong className="text-red-400">paused</strong>. Allowing it again lets the AI suggest and place orders that pass the safety rules.
             </p>
           ) : (
             <div className="rounded-lg border border-red-500/30 bg-red-950/40 p-3 text-red-200">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
                 <p>
-                  <strong>Immediate Action:</strong> Halts all pending automated and copilot orders across Real and Virtual portfolios. No new trades can be submitted until explicitly cleared. Existing filled positions remain preserved.
+                  This immediately stops new automated and AI-suggested orders in both accounts. Shares you already own stay exactly as they are — nothing is sold automatically. You can resume whenever you are ready.
                 </p>
               </div>
             </div>
@@ -62,15 +62,15 @@ export default function EmergencyStopModal({ isOpen, isTriggered, onClose, onCon
 
           {!isTriggered && (
             <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1">
-                Halt Reason / Notes
+              <label className="block text-xs font-semibold text-ink-2 mb-1">
+                Why are you pausing? (optional)
               </label>
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2.5 text-xs text-white focus:border-red-500 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.12] bg-black/30 p-2.5 text-xs text-white focus:border-red-500 focus:outline-none"
                 rows={2}
-                placeholder="Specify reason for audit logs..."
+                placeholder="e.g. market looks unstable"
               />
             </div>
           )}
@@ -79,7 +79,7 @@ export default function EmergencyStopModal({ isOpen, isTriggered, onClose, onCon
             <button
               onClick={onClose}
               disabled={loading}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800"
+              className="rounded-lg border border-white/[0.12] px-4 py-2 text-xs font-medium text-ink-2 hover:bg-white/[0.06]"
             >
               Cancel
             </button>
@@ -92,7 +92,7 @@ export default function EmergencyStopModal({ isOpen, isTriggered, onClose, onCon
                   : 'bg-red-600 hover:bg-red-500'
               }`}
             >
-              {loading ? 'Processing...' : isTriggered ? 'Resume System Trading' : 'HALT ALL TRADING'}
+              {loading ? 'Working…' : isTriggered ? 'Allow trading again' : 'Pause all trading'}
             </button>
           </div>
         </div>
