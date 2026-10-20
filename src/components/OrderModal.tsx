@@ -24,7 +24,7 @@ export default function OrderModal({
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [productType, setProductType] = useState<'CNC' | 'MIS'>('CNC');
   const [quantity, setQuantity] = useState<number>(1);
-  const [price, setPrice] = useState<number>(preselectedAsset?.price || 1000);
+  const [price, setPrice] = useState<number>(preselectedAsset?.price || assets[0]?.price || 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +65,6 @@ export default function OrderModal({
           assetId,
           side,
           quantity,
-          price,
           productType,
           orderMode: 'MANUAL'
         })
@@ -194,27 +193,25 @@ export default function OrderModal({
             </select>
           </div>
 
-          {/* Quantity & Price */}
+          {/* Quantity & reference quote: this simulator does not support user-specified limit fills. */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-1">Quantity (Shares)</label>
               <input
                 type="number"
                 min="1"
+                step="1"
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1">Limit Price (₹)</label>
-              <input
-                type="number"
-                step="0.05"
-                value={price}
-                onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-              />
+              <label className="block text-xs font-semibold text-slate-400 mb-1">Reference quote (₹)</label>
+              <div className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+                {price > 0 ? price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'Quote unavailable'}
+              </div>
+              <p className="mt-1 text-[10px] text-slate-500">Read-only estimate; execution uses the stored quote.</p>
             </div>
           </div>
 
