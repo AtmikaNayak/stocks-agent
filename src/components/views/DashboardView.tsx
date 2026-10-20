@@ -58,19 +58,23 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-xs text-amber-100">
+        <strong className="text-amber-200">Demo / safety notice:</strong> market, fundamentals, news and backtest seed records are illustrative, not verified data.
+        Real-money order submission and broker authentication are disabled. Any existing REAL portfolio balances shown below are stored records, not a live broker sync.
+      </div>
       {/* Welcome & System Summary */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800/80 p-5 rounded-2xl border border-slate-800 shadow-sm">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl font-bold text-white tracking-tight">
-              InvestPilot Autonomous Dashboard
+              InvestPilot AI 2.0 Dashboard
             </h1>
             <span className="text-[11px] bg-blue-500/20 text-blue-400 font-semibold px-2 py-0.5 rounded border border-blue-500/30">
               {experienceMode === 'BEGINNER' ? 'Guided Beginner View' : 'Quantitative Workspace'}
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Disciplined evidence-based investing for Indian equities. Two strictly isolated portfolios, four autonomous agents.
+            Research and paper trading workspace. Demo data only; live trading is disabled in this build.
           </p>
         </div>
 
@@ -160,7 +164,7 @@ export default function DashboardView({
               </div>
               <div>
                 <h3 className="font-bold text-sm text-white">Environment A: Real-Money Demat</h3>
-                <span className="text-[11px] text-amber-400 font-medium">Broker Gateway (Zerodha / Angel One)</span>
+                <span className="text-[11px] text-amber-400 font-medium">Real broker integration unavailable in this build</span>
               </div>
             </div>
             <span
@@ -176,13 +180,13 @@ export default function DashboardView({
 
           <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-800/80 my-2">
             <div>
-              <span className="text-[11px] text-slate-400 block">Live Demat Value</span>
+              <span className="text-[11px] text-slate-400 block">Stored REAL portfolio value (unverified)</span>
               <span className="text-base font-bold text-white">
                 ₹{realPort?.total_value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
               </span>
             </div>
             <div>
-              <span className="text-[11px] text-slate-400 block">Broker Cash</span>
+              <span className="text-[11px] text-slate-400 block">Last recorded cash (unverified)</span>
               <span className="text-base font-bold text-slate-200">
                 ₹{realPort?.current_cash.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
               </span>
@@ -201,7 +205,7 @@ export default function DashboardView({
               onClick={() => onSelectView('broker')}
               className="text-amber-400 hover:underline font-semibold flex items-center gap-1"
             >
-              Configure Official Broker API <ArrowUpRight className="h-3 w-3" />
+              Broker integration status <ArrowUpRight className="h-3 w-3" />
             </button>
           </div>
         </div>
