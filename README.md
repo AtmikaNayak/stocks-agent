@@ -148,7 +148,7 @@ npm install
 # Initialize demo fixtures (synthetic data; not verified NSE data)
 npm run db:seed
 
-# Run automated test suites (12 unit and integration tests)
+# Run automated test suite
 npm test
 
 # Build production application
