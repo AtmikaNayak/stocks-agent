@@ -8,7 +8,11 @@ if (!fs.existsSync(DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
-const DB_PATH = path.join(DB_DIR, 'investpilot.db');
+// Tests can set INVESTPILOT_DB_PATH to an isolated database so test runs never
+// mutate the user's working portfolio database.
+const DB_PATH = process.env.INVESTPILOT_DB_PATH
+  ? path.resolve(process.env.INVESTPILOT_DB_PATH)
+  : path.join(DB_DIR, 'investpilot.db');
 
 let _db: Database.Database | null = null;
 
