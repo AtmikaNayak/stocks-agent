@@ -67,10 +67,15 @@ export default function BacktestingView() {
           <div>
             <h1 className="text-lg font-bold text-white">Quantitative Backtesting & Strategy Lab</h1>
             <p className="text-xs text-slate-400">
-              Backtest with realistic Indian transaction costs (STT, NSE turnover, GST) and strictly ZERO look-ahead bias.
+              Explore the backtesting engine with estimated costs. Results from this build use synthetic demo candles and are not evidence of real strategy performance.
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-xs text-amber-100">
+        <strong className="text-amber-200">Synthetic-data warning:</strong> this build has no verified historical market feed.
+        Run outputs demonstrate simulator mechanics only and must not be treated as validated returns, out-of-sample results, or investment advice.
       </div>
 
       {/* Configuration & Trigger */}
