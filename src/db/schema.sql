@@ -151,8 +151,8 @@ CREATE TABLE IF NOT EXISTS market_data_points (
     close REAL NOT NULL,
     volume INTEGER NOT NULL,
     vwap REAL,
-    provider TEXT NOT NULL, -- 'YAHOO_FINANCE', 'NSE_DIRECT', 'ZERODHA'
-    freshness_status TEXT NOT NULL DEFAULT 'VERIFIED', -- 'LIVE', 'DELAYED_15M', 'EOD', 'STALE'
+    provider TEXT NOT NULL, -- real providers or SYNTHETIC_SEED for generated demo fixtures
+    freshness_status TEXT NOT NULL DEFAULT 'STALE', -- 'LIVE', 'DELAYED_15M', 'EOD', 'HISTORICAL', 'SYNTHETIC', 'STALE'; never assume verified by default
     quality_score REAL NOT NULL DEFAULT 1.0,
     retrieved_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(asset_id, timestamp, timeframe)
