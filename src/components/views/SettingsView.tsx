@@ -89,7 +89,7 @@ export default function SettingsView({ experienceMode, onToggleExperienceMode }:
         <div className="border-t border-slate-800 pt-5 space-y-2">
           <h3 className="font-bold text-sm text-white">Regulatory Jurisdictions</h3>
           <p className="text-slate-400 leading-relaxed">
-            Market: <strong>India (NSE / BSE)</strong> | Base Currency: <strong>Indian Rupee (INR ₹)</strong> | Statutory Tax: <strong>SEBI / Income Tax Department STT Compliant</strong>
+            Market scope: <strong>India (NSE / BSE)</strong> | Base currency: <strong>Indian Rupee (INR ₹)</strong> | Cost assumptions: <strong>illustrative estimates, not broker-confirmed charges</strong>
           </p>
         </div>
       </div>
