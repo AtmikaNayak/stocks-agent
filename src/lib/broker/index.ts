@@ -28,20 +28,25 @@ export class BrokerIntegrationService {
     const user = db.queryOne<{ id: string }>('SELECT id FROM users WHERE id = ?', [userId]);
     if (!user) throw new Error('User not found.');
 
-    // Fail closed. A mock token must never be treated as a real broker session.
-    const existing = db.queryOne<{ id: string }>(
-      'SELECT id FROM broker_connections WHERE user_id = ? AND broker_name = ? ORDER BY created_at DESC LIMIT 1',
-      [userId, brokerName]
-    );
-    if (existing) {
-      db.execute(`
-        UPDATE broker_connections SET status = 'DISCONNECTED',
-          encrypted_access_token = NULL,
-          status_message = 'Live broker adapter is not implemented; no live connection was made.',
-          compliance_acknowledged = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `, [complianceAcknowledged ? 1 : 0, existing.id]);
-    }
+    // Fail closed. This build cannot authenticate a broker; invalidate any old
+    // mock connection state for the user instead of leaving an apparently-live session.
+    db.execute(`
+      UPDATE broker_connections SET status = 'DISCONNECTED',
+        encrypted_access_token = NULL,
+        status_message = 'Live broker adapter is not implemented; no authenticated session is active.',
+        updated_at = datetime('now')
+      WHERE user_id = ?
+    `, [userId]);
+    db.execute(`
+      UPDATE portfolio_permissions SET allow_autonomous_trading = 0
+      WHERE portfolio_id IN (SELECT id FROM portfolios WHERE user_id = ? AND type = 'REAL')
+    `, [userId]);
+    db.execute(`
+      UPDATE user_settings
+      SET control_mode = CASE WHEN control_mode = 'AUTHORISED_LIVE' THEN 'COPILOT' ELSE control_mode END,
+          updated_at = datetime('now')
+      WHERE user_id = ?
+    `, [userId]);
     throw new Error('Live broker connection is not available yet. This build has no verified broker authentication or order/fill adapter. Virtual trading remains available.');
   }
 
