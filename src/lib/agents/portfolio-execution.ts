@@ -20,6 +20,22 @@ export class PortfolioExecutionAgent {
   name = 'PORTFOLIO_EXECUTION';
 
   async executeOrder(params: ExecuteOrderParams) {
+    if (!Number.isSafeInteger(params.quantity) || params.quantity <= 0) {
+      throw new Error('Quantity must be a positive whole number of shares.');
+    }
+    if (params.side !== 'BUY' && params.side !== 'SELL') {
+      throw new Error('Unsupported order side.');
+    }
+    if (!['CNC', 'MIS'].includes(params.productType ?? 'CNC')) {
+      throw new Error('Unsupported product type.');
+    }
+    if (!['MANUAL', 'AI_PROPOSAL_APPROVED', 'AUTONOMOUS_VIRTUAL', 'AUTONOMOUS_LIVE'].includes(params.orderMode)) {
+      throw new Error('Unsupported order mode.');
+    }
+    if (params.price !== undefined) {
+      throw new Error('Custom fill prices are disabled. The simulator uses its stored market-data quote.');
+    }
+
     const {
       portfolioId,
       assetId,
@@ -53,6 +69,42 @@ export class PortfolioExecutionAgent {
       throw new Error('REAL portfolio execution is disabled: a verified broker order adapter and fill reconciliation are not implemented. Use the virtual portfolio.');
     }
 
+    if (orderMode === 'AUTONOMOUS_LIVE') {
+      throw new Error('AUTONOMOUS_LIVE is disabled in this build. Use a virtual portfolio.');
+    }
+    if (orderMode === 'AUTONOMOUS_VIRTUAL' && portfolio.type !== 'VIRTUAL') {
+      throw new Error('AUTONOMOUS_VIRTUAL orders require a virtual portfolio.');
+    }
+    if (orderMode === 'AI_PROPOSAL_APPROVED') {
+      if (!proposalId) {
+        throw new Error('An approved proposal ID is required for AI-proposal execution.');
+      }
+      const proposal = db.queryOne<{
+        id: string;
+        portfolio_id: string;
+        asset_id: string;
+        action: string;
+        proposed_quantity: number;
+        status: string;
+        expires_at: string;
+      }>(
+        'SELECT id, portfolio_id, asset_id, action, proposed_quantity, status, expires_at FROM investment_proposals WHERE id = ? AND portfolio_id = ? AND asset_id = ?',
+        [proposalId, portfolioId, assetId]
+      );
+      if (
+        !proposal ||
+        proposal.status !== 'APPROVED' ||
+        proposal.action !== side ||
+        proposal.proposed_quantity !== quantity ||
+        !Number.isFinite(Date.parse(proposal.expires_at)) ||
+        Date.parse(proposal.expires_at) <= Date.now()
+      ) {
+        throw new Error('Proposal execution rejected: proposal must be approved, unexpired, and match the portfolio, asset, side, and quantity.');
+      }
+    } else if (proposalId) {
+      throw new Error('A proposal ID can only be executed with AI_PROPOSAL_APPROVED mode.');
+    }
+
     // 2. Fetch Asset & Current Price
     const asset = db.queryOne<{ id: string; symbol: string; name: string }>(
       'SELECT id, symbol, name FROM assets WHERE id = ?',
@@ -63,7 +115,10 @@ export class PortfolioExecutionAgent {
     const quote = await marketData.getQuote(asset.symbol);
     if (!quote) throw new Error(`Market data unavailable for ${asset.symbol}. Order rejected.`);
 
-    const execPrice = params.price || quote.price;
+    const execPrice = quote.price;
+    if (!Number.isFinite(execPrice) || execPrice <= 0) {
+      throw new Error(`Invalid market quote for ${asset.symbol}. Order rejected.`);
+    }
 
     // 3. Strict Deterministic Risk Check
     const riskResult = evaluateProposalRisk({
