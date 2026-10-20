@@ -24,6 +24,8 @@ export default function RealPortfolioView({
   onSelectView,
   onOpenOrderModal
 }: Props) {
+  // A database flag is not proof of a verified external broker session.
+  const isConnected = false;
   const realPositions = positions.filter((p) => p.portfolio_type === 'REAL');
 
   return (
