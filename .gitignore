@@ -7,3 +7,6 @@ coverage/
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+
+# Disposable isolated database used only by Vitest
+data/investpilot.test.db*
