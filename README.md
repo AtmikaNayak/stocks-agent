@@ -128,6 +128,8 @@ The simulator estimates transaction costs using configured rates. These are illu
 - Virtual trading is still a simulator. Costs are estimates and simulated fills do not establish likely future performance.
 - Before any live use, implement and test provider-specific auth, secret storage, idempotent broker order submission, broker status polling, partial-fill/cancel handling, and broker-confirmed positions/cash reconciliation. Keep candidate strategies in backtest and paper trading until separately validated.
 - The repository currently contains a SQLite file under `data/investpilot.db`. Back it up before running migrations or seed commands; seed re-runs are now non-destructive to existing portfolio rows.
+- This is a single-user local prototype and does not yet implement authenticated application sessions/authorization for its API routes. The npm scripts bind to `127.0.0.1` by default; do not expose the app to a LAN or the public internet until authentication, authorization, CSRF protection, and secret-management controls are implemented.
+- The current dependency tree reports npm security advisories, including critical/high severity items, and the current Next.js version is flagged as vulnerable. Run a reviewed dependency update and retest before any deployment; do not use `npm audit fix --force` blindly.
 
 ## 🚀 Getting Started
 
