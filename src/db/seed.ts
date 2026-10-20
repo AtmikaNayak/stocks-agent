@@ -1,18 +1,18 @@
 import { db } from './index';
 
 export function runSeed() {
-  console.log('🌱 Seeding InvestPilot AI database with verified Indian market data...');
+  console.log('🌱 Seeding demo fixtures. Market, news, fundamentals and backtest fixtures are NOT verified live data.');
 
   // 1. Default User
   const userId = 'usr_pilot_01';
   db.execute(`
-    INSERT OR REPLACE INTO users (id, email, name, created_at, updated_at)
+    INSERT OR IGNORE INTO users (id, email, name, created_at, updated_at)
     VALUES (?, ?, ?, datetime('now'), datetime('now'))
   `, [userId, 'investor@investpilot.ai', 'Rajesh K. Verma']);
 
   // 2. User Settings
   db.execute(`
-    INSERT OR REPLACE INTO user_settings (
+    INSERT OR IGNORE INTO user_settings (
       id, user_id, experience_mode, control_mode, emergency_stop_enabled,
       notifications_email_enabled, notifications_in_app_enabled, created_at, updated_at
     ) VALUES (?, ?, ?, ?, 0, 1, 1, datetime('now'), datetime('now'))
@@ -21,7 +21,7 @@ export function runSeed() {
   // 3. Broker Connections (Real environment starts DISCONNECTED)
   const brokerId = 'brk_zerodha_01';
   db.execute(`
-    INSERT OR REPLACE INTO broker_connections (
+    INSERT OR IGNORE INTO broker_connections (
       id, user_id, broker_name, client_id, api_key_masked,
       status, status_message, compliance_acknowledged, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
@@ -39,7 +39,7 @@ export function runSeed() {
   // Real Portfolio (Environment A: strictly disconnected and 0 until authorized)
   const realPortId = 'port_real_01';
   db.execute(`
-    INSERT OR REPLACE INTO portfolios (
+    INSERT OR IGNORE INTO portfolios (
       id, user_id, type, name, currency, initial_capital,
       current_cash, invested_value, total_value, realised_pnl, unrealised_pnl,
       is_active, broker_connection_id, created_at, updated_at
@@ -49,7 +49,7 @@ export function runSeed() {
   // Virtual Portfolio (Environment B: ₹25,000 initial capital simulator)
   const virtPortId = 'port_virt_01';
   db.execute(`
-    INSERT OR REPLACE INTO portfolios (
+    INSERT OR IGNORE INTO portfolios (
       id, user_id, type, name, currency, initial_capital,
       current_cash, invested_value, total_value, realised_pnl, unrealised_pnl,
       is_active, broker_connection_id, created_at, updated_at
@@ -58,7 +58,7 @@ export function runSeed() {
 
   // Initial cash ledger entry for virtual portfolio
   db.execute(`
-    INSERT OR REPLACE INTO cash_ledger_entries (
+    INSERT OR IGNORE INTO cash_ledger_entries (
       id, portfolio_id, portfolio_type, entry_type, amount, balance_after,
       reference_id, description, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -66,7 +66,7 @@ export function runSeed() {
 
   // Initial cash ledger entry for real portfolio (zero)
   db.execute(`
-    INSERT OR REPLACE INTO cash_ledger_entries (
+    INSERT OR IGNORE INTO cash_ledger_entries (
       id, portfolio_id, portfolio_type, entry_type, amount, balance_after,
       reference_id, description, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -75,7 +75,7 @@ export function runSeed() {
   // 5. Portfolio Permissions & Risk Limits
   // Real: strict zero live trading until broker connected & authorized
   db.execute(`
-    INSERT OR REPLACE INTO portfolio_permissions (
+    INSERT OR IGNORE INTO portfolio_permissions (
       id, portfolio_id, allow_autonomous_trading, max_position_pct, max_portfolio_exposure_pct,
       min_cash_reserve_pct, max_risk_per_trade_pct, max_daily_loss_limit, max_drawdown_limit_pct,
       max_order_value, max_orders_per_day, allow_intraday, allow_delivery, trading_schedule_enabled
@@ -84,7 +84,7 @@ export function runSeed() {
 
   // Virtual: default conservative limits with autonomous simulation allowed
   db.execute(`
-    INSERT OR REPLACE INTO portfolio_permissions (
+    INSERT OR IGNORE INTO portfolio_permissions (
       id, portfolio_id, allow_autonomous_trading, max_position_pct, max_portfolio_exposure_pct,
       min_cash_reserve_pct, max_risk_per_trade_pct, max_daily_loss_limit, max_drawdown_limit_pct,
       max_order_value, max_orders_per_day, allow_intraday, allow_delivery, trading_schedule_enabled
@@ -197,14 +197,14 @@ export function runSeed() {
 
   for (const asset of assets) {
     db.execute(`
-      INSERT OR REPLACE INTO assets (
+      INSERT OR IGNORE INTO assets (
         id, symbol, exchange, name, sector, industry, asset_type,
         lot_size, tick_size, is_tradable, isin, description, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, 'EQUITY', 1, 0.05, 1, ?, ?, datetime('now'))
     `, [asset.id, asset.symbol, asset.exchange, asset.name, asset.sector, asset.industry, asset.isin, asset.description]);
   }
 
-  // 7. Verified Fundamentals (Audited financial figures)
+  // 7. Illustrative fundamentals (demo-only values; not audited or verified)
   const fundamentals = [
     {
       assetId: 'ast_reliance',
@@ -222,7 +222,7 @@ export function runSeed() {
       profitGrowthYoy: 7.3,
       freeCashFlow: 32000.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_tcs',
@@ -240,7 +240,7 @@ export function runSeed() {
       profitGrowthYoy: 8.5,
       freeCashFlow: 41200.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_infy',
@@ -258,7 +258,7 @@ export function runSeed() {
       profitGrowthYoy: 6.1,
       freeCashFlow: 21500.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_hdfcbank',
@@ -276,7 +276,7 @@ export function runSeed() {
       profitGrowthYoy: 12.8,
       freeCashFlow: 0.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_icicibank',
@@ -294,7 +294,7 @@ export function runSeed() {
       profitGrowthYoy: 21.0,
       freeCashFlow: 0.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_tatamotors',
@@ -312,7 +312,7 @@ export function runSeed() {
       profitGrowthYoy: 45.0,
       freeCashFlow: 18500.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_itc',
@@ -330,7 +330,7 @@ export function runSeed() {
       profitGrowthYoy: 7.2,
       freeCashFlow: 16800.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_sbin',
@@ -348,7 +348,7 @@ export function runSeed() {
       profitGrowthYoy: 15.6,
       freeCashFlow: 0.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_lt',
@@ -366,7 +366,7 @@ export function runSeed() {
       profitGrowthYoy: 14.2,
       freeCashFlow: 8900.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     },
     {
       assetId: 'ast_bhartiartl',
@@ -384,13 +384,13 @@ export function runSeed() {
       profitGrowthYoy: 38.5,
       freeCashFlow: 24000.0,
       fy: 'FY24-25',
-      source: 'NSE / Audited Annual Filings'
+      source: 'SYNTHETIC_SEED — illustrative metrics; not verified'
     }
   ];
 
   for (const f of fundamentals) {
     db.execute(`
-      INSERT OR REPLACE INTO company_fundamentals (
+      INSERT OR IGNORE INTO company_fundamentals (
         id, asset_id, market_cap, pe_ratio, pb_ratio, dividend_yield,
         roe, roce, debt_to_equity, eps_ttm, operating_margin, net_profit_margin,
         revenue_growth_yoy, profit_growth_yoy, free_cash_flow, financial_year,
@@ -403,7 +403,7 @@ export function runSeed() {
     ]);
   }
 
-  // 8. Verified Historical OHLCV Series (NSE Closing Prices & Realistic Historical Candles)
+  // 8. Synthetic OHLCV fixtures (generated numbers; not NSE closing prices)
   // Base current quotes for each stock
   const currentPrices: Record<string, { close: number; open: number; high: number; low: number; vol: number }> = {
     ast_reliance: { close: 2942.50, open: 2930.00, high: 2955.00, low: 2922.00, vol: 4850000 },
@@ -439,10 +439,10 @@ export function runSeed() {
       const vwap = parseFloat(((dayHigh + dayLow + dayClose) / 3).toFixed(2));
 
       db.execute(`
-        INSERT OR REPLACE INTO market_data_points (
+        INSERT OR IGNORE INTO market_data_points (
           id, asset_id, timestamp, timeframe, open, high, low, close,
           volume, vwap, provider, freshness_status, quality_score, retrieved_at
-        ) VALUES (?, ?, ?, '1D', ?, ?, ?, ?, ?, ?, 'NSE_EOD_VERIFIED', ?, 1.0, datetime('now'))
+        ) VALUES (?, ?, ?, '1D', ?, ?, ?, ?, ?, ?, 'SYNTHETIC_SEED', ?, 0.0, datetime('now'))
       `, [
         `mdp_${assetId}_${dateStr}`,
         assetId,
@@ -453,19 +453,31 @@ export function runSeed() {
         dayClose,
         dayVol,
         vwap,
-        dayOffset === 0 ? 'VERIFIED' : 'HISTORICAL'
+        'SYNTHETIC'
       ]);
     }
   }
 
-  // 9. Legitimate News & Corporate Announcements
+  // Correct provenance labels for demo fixtures created by older versions of this seed script.
+  db.execute(`
+    UPDATE market_data_points
+    SET provider = 'SYNTHETIC_SEED', freshness_status = 'SYNTHETIC', quality_score = 0.0
+    WHERE id GLOB 'mdp_ast_*' AND provider IN ('NSE_EOD_VERIFIED', 'NSE_EOD_SAMPLE')
+  `);
+  db.execute(`
+    UPDATE company_fundamentals
+    SET source = 'SYNTHETIC_SEED — illustrative metrics; not verified'
+    WHERE id GLOB 'fnd_ast_*' AND source = 'NSE / Audited Annual Filings'
+  `);
+
+  // 9. Demo news placeholders (not real or verified corporate announcements)
   const newsItems = [
     {
       id: 'news_01',
       assetId: 'ast_reliance',
-      headline: 'Reliance Retail Expands FMCG Footprint with Strategic Distribution Tie-ups',
-      summary: 'Reliance Retail announced key supply-chain partnerships expanding grocery delivery throughput across Tier-2 and Tier-3 Indian cities.',
-      source: 'Economic Times',
+      headline: '[DEMO DATA — NOT VERIFIED] Reliance Retail Expands FMCG Footprint with Strategic Distribution Tie-ups',
+      summary: 'Illustrative seed content only; this is not a verified market-news item. Reliance Retail announced key supply-chain partnerships expanding grocery delivery throughput across Tier-2 and Tier-3 Indian cities.',
+      source: 'DEMO_SEED',
       sentiment: 0.45,
       label: 'POSITIVE',
       publishedAt: '2026-10-19 14:30:00'
@@ -473,9 +485,9 @@ export function runSeed() {
     {
       id: 'news_02',
       assetId: 'ast_tcs',
-      headline: 'TCS Secures $450 Million Multi-Year Cloud Migration Deal with European Banking Group',
-      summary: 'TCS confirmed a long-term enterprise transformation mandate leveraging AI-assisted mainframe modernisations.',
-      source: 'Mint',
+      headline: '[DEMO DATA — NOT VERIFIED] TCS Secures $450 Million Multi-Year Cloud Migration Deal with European Banking Group',
+      summary: 'Illustrative seed content only; this is not a verified market-news item. TCS confirmed a long-term enterprise transformation mandate leveraging AI-assisted mainframe modernisations.',
+      source: 'DEMO_SEED',
       sentiment: 0.62,
       label: 'POSITIVE',
       publishedAt: '2026-10-18 10:15:00'
@@ -483,9 +495,9 @@ export function runSeed() {
     {
       id: 'news_03',
       assetId: 'ast_hdfcbank',
-      headline: 'RBI Maintains Repo Rate at 6.50%; HDFC Bank Credit Growth Remains Robust at 16%',
-      summary: 'Reserve Bank of India Monetary Policy Committee kept key lending rates unchanged, maintaining liquidity stability across scheduled commercial banks.',
-      source: 'PTI / RBI Press Release',
+      headline: '[DEMO DATA — NOT VERIFIED] RBI Maintains Repo Rate at 6.50%; HDFC Bank Credit Growth Remains Robust at 16%',
+      summary: 'Illustrative seed content only; this is not a verified market-news item. Reserve Bank of India Monetary Policy Committee kept key lending rates unchanged, maintaining liquidity stability across scheduled commercial banks.',
+      source: 'DEMO_SEED',
       sentiment: 0.35,
       label: 'POSITIVE',
       publishedAt: '2026-10-17 11:45:00'
@@ -493,9 +505,9 @@ export function runSeed() {
     {
       id: 'news_04',
       assetId: 'ast_tatamotors',
-      headline: 'Tata Motors Electric Vehicle Deliveries Surge 24% YoY in September Quarter',
-      summary: 'Strong commercial demand for Punch EV and Nexon EV platforms pushed domestic passenger EV market share to 68%.',
-      source: 'Business Standard',
+      headline: '[DEMO DATA — NOT VERIFIED] Tata Motors Electric Vehicle Deliveries Surge 24% YoY in September Quarter',
+      summary: 'Illustrative seed content only; this is not a verified market-news item. Strong commercial demand for Punch EV and Nexon EV platforms pushed domestic passenger EV market share to 68%.',
+      source: 'DEMO_SEED',
       sentiment: 0.58,
       label: 'POSITIVE',
       publishedAt: '2026-10-16 09:30:00'
@@ -503,9 +515,9 @@ export function runSeed() {
     {
       id: 'news_05',
       assetId: 'ast_infy',
-      headline: 'Infosys Expands AI Enterprise Platform Topaz with Specialized Financial Services Models',
-      summary: 'New generative enterprise tools target regulatory compliance and wealth management workflows for Tier-1 lenders.',
-      source: 'Financial Express',
+      headline: '[DEMO DATA — NOT VERIFIED] Infosys Expands AI Enterprise Platform Topaz with Specialized Financial Services Models',
+      summary: 'Illustrative seed content only; this is not a verified market-news item. New generative enterprise tools target regulatory compliance and wealth management workflows for Tier-1 lenders.',
+      source: 'DEMO_SEED',
       sentiment: 0.40,
       label: 'POSITIVE',
       publishedAt: '2026-10-15 16:00:00'
@@ -514,22 +526,39 @@ export function runSeed() {
 
   for (const n of newsItems) {
     db.execute(`
-      INSERT OR REPLACE INTO news_items (
+      INSERT OR IGNORE INTO news_items (
         id, asset_id, headline, summary, source, sentiment_score, sentiment_label, published_at, retrieved_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [n.id, n.assetId, n.headline, n.summary, n.source, n.sentiment, n.label, n.publishedAt]);
   }
 
+  // Re-label previous seeded news rows so previously-created databases cannot present fixtures as genuine news.
+  const demoNews = [
+    ['news_01', '[DEMO DATA] Example Reliance Industries headline'],
+    ['news_02', '[DEMO DATA] Example TCS headline'],
+    ['news_03', '[DEMO DATA] Example HDFC Bank / RBI headline'],
+    ['news_04', '[DEMO DATA] Example Tata Motors headline'],
+    ['news_05', '[DEMO DATA] Example Infosys headline']
+  ];
+  for (const [id, headline] of demoNews) {
+    db.execute(`
+      UPDATE news_items
+      SET headline = ?, summary = 'Demo fixture only; this is not a real or verified market-news item.',
+          source = 'DEMO_SEED', sentiment_score = 0.0, sentiment_label = 'NEUTRAL'
+      WHERE id = ?
+    `, [headline, id]);
+  }
+
   // 10. Default Watchlists
   const watchlistId = 'wl_nifty50_core';
   db.execute(`
-    INSERT OR REPLACE INTO watchlists (id, user_id, name, description, is_default, created_at)
+    INSERT OR IGNORE INTO watchlists (id, user_id, name, description, is_default, created_at)
     VALUES (?, ?, 'NIFTY 50 High-Conviction Core', 'Systematic watchlist tracking top weighted bluechips across banking, tech, energy and FMCG.', 1, datetime('now'))
   `, [watchlistId, userId]);
 
   for (const asset of assets) {
     db.execute(`
-      INSERT OR REPLACE INTO watchlist_items (id, watchlist_id, asset_id, added_at)
+      INSERT OR IGNORE INTO watchlist_items (id, watchlist_id, asset_id, added_at)
       VALUES (?, ?, ?, datetime('now'))
     `, [`wli_${asset.id}`, watchlistId, asset.id]);
   }
@@ -537,15 +566,15 @@ export function runSeed() {
   // 11. Strategy Definitions and Strategy Versions
   const strat1Id = 'strat_value_quality';
   db.execute(`
-    INSERT OR REPLACE INTO strategy_definitions (
+    INSERT OR IGNORE INTO strategy_definitions (
       id, name, description, horizon, category, is_active, active_version_id, created_at
     ) VALUES (?, ?, ?, 'LONG_TERM', 'VALUE_QUALITY', 1, 'ver_strat_1_v12', datetime('now'))
   `, [strat1Id, 'Indian Bluechip Quality & Cashflow Compounder', 'Focuses on low leverage (D/E < 1), high return on capital (ROCE > 18%), and stable pricing power with attractive valuation multiples.']);
 
   db.execute(`
-    INSERT OR REPLACE INTO strategy_versions (
+    INSERT OR IGNORE INTO strategy_versions (
       id, strategy_id, version_tag, parameters_json, rationale, status, approval_notes, approved_by, approved_at, created_at
-    ) VALUES (?, ?, 'v1.2-conservative', ?, ?, 'APPROVED_LIVE', ?, 'Quantitative Review Board', datetime('now'), datetime('now'))
+    ) VALUES (?, ?, 'v1.2-conservative', ?, ?, 'PAPER_TESTING', ?, 'DEMO_SEED', datetime('now'), datetime('now'))
   `, [
     'ver_strat_1_v12',
     strat1Id,
@@ -558,18 +587,18 @@ export function runSeed() {
       holding_period_days_target: 365
     }),
     'Version 1.2 incorporates tighter debt-to-equity filters and sector relative PE valuation criteria.',
-    'Passed out-of-sample stress test on 5-year NSE data.'
+    'Demo fixture only; no verified market dataset or independent out-of-sample backtest has been run.'
   ]);
 
   const strat2Id = 'strat_momentum_trend';
   db.execute(`
-    INSERT OR REPLACE INTO strategy_definitions (
+    INSERT OR IGNORE INTO strategy_definitions (
       id, name, description, horizon, category, is_active, active_version_id, created_at
     ) VALUES (?, ?, ?, 'SHORT_TERM', 'MOMENTUM_TREND', 1, 'ver_strat_2_v20', datetime('now'))
   `, [strat2Id, 'NSE Momentum & Volatility Breakout', 'Trades systematic breakouts above 20-day VWAP with volume confirmation (>1.5x 20-day average) and strict trailing stop-losses.']);
 
   db.execute(`
-    INSERT OR REPLACE INTO strategy_versions (
+    INSERT OR IGNORE INTO strategy_versions (
       id, strategy_id, version_tag, parameters_json, rationale, status, approval_notes, approved_by, approved_at, created_at
     ) VALUES (?, ?, 'v2.0-momentum', ?, ?, 'PAPER_TESTING', ?, 'Lead Trader', datetime('now'), datetime('now'))
   `, [
@@ -583,13 +612,13 @@ export function runSeed() {
       profit_target_pct: 6.0,
       max_holding_days: 14
     }),
-    'Paper trading active in virtual environment to assess execution slippage during high-volatility sessions.',
-    'Approved for paper trading only. Live trading forbidden until 60-day validation window completes.'
+    'Demo strategy configuration only; paper trading activity has not been independently verified.',
+    'Demo fixture only. Do not interpret this as evidence of live or paper-trading validation.'
   ]);
 
   // Backtest records for Strategy 1
   db.execute(`
-    INSERT OR REPLACE INTO backtest_runs (
+    INSERT OR IGNORE INTO backtest_runs (
       id, strategy_version_id, asset_universe, start_date, end_date, initial_capital,
       final_capital, total_return_pct, cagr_pct, max_drawdown_pct, sharpe_ratio,
       sortino_ratio, win_rate_pct, total_trades, turnover_ratio, slippage_assumed_pct,
@@ -610,6 +639,25 @@ export function runSeed() {
     })
   ]);
 
+  // Prevent old seeded strategy records from implying verified live approval or a completed test.
+  db.execute(`
+    UPDATE strategy_versions
+    SET status = 'PAPER_TESTING', approved_by = NULL, approved_at = NULL,
+        approval_notes = 'Seed fixture only; live use is not approved. Requires real data and independent validation.'
+    WHERE id IN ('ver_strat_1_v12', 'ver_strat_2_v20')
+  `);
+  db.execute(`
+    UPDATE backtest_runs
+    SET asset_universe = 'DEMO FIXTURE — NO VERIFIED BACKTEST',
+        initial_capital = 25000.0, final_capital = 25000.0,
+        total_return_pct = 0.0, cagr_pct = 0.0, max_drawdown_pct = 0.0,
+        sharpe_ratio = 0.0, sortino_ratio = 0.0, win_rate_pct = 0.0,
+        total_trades = 0, turnover_ratio = 0.0, slippage_assumed_pct = 0.0,
+        brokerage_assumed = 0.0, out_of_sample_tested = 0,
+        results_json = '{"demoFixture":true,"verified":false,"message":"Placeholder only; no actual backtest has been run."}'
+    WHERE id = 'bt_strat_1_2024_2026'
+  `);
+
   // 12. Scheduled Jobs
   const jobs = [
     { name: 'market_session_monitor', desc: 'Checks NSE market hours (09:15-15:30 IST) & exchange holiday calendar', cron: '*/5 9-15 * * 1-5', interval: 300 },
@@ -621,17 +669,17 @@ export function runSeed() {
 
   for (const job of jobs) {
     db.execute(`
-      INSERT OR REPLACE INTO scheduled_jobs (
+      INSERT OR IGNORE INTO scheduled_jobs (
         id, job_name, description, schedule_cron, interval_seconds, is_active,
         last_run_at, last_run_status, last_run_message, next_run_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, 1, datetime('now'), 'SUCCESS', 'Executed on schedule with verified status.', datetime('now', '+60 seconds'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, 1, datetime('now'), 'NOT_RUN', 'Seed fixture; no worker execution has been verified.', datetime('now', '+60 seconds'), datetime('now'))
     `, [`job_${job.name}`, job.name, job.desc, job.cron, job.interval]);
   }
 
   // 13. Audit Log initialization
   db.execute(`
-    INSERT INTO audit_logs (id, user_id, portfolio_id, action_type, actor, details, created_at)
-    VALUES (?, ?, ?, 'SYSTEM_INIT', 'SYSTEM', 'InvestPilot AI 2.0 initialized with verified market models and independent real/virtual ledgers.', datetime('now'))
+    INSERT OR IGNORE INTO audit_logs (id, user_id, portfolio_id, action_type, actor, details, created_at)
+    VALUES (?, ?, ?, 'SYSTEM_INIT', 'SYSTEM', 'InvestPilot AI 2.0 demo fixtures initialized; synthetic data and live-trading safeguards remain clearly separated.', datetime('now'))
   `, ['aud_init_01', userId, virtPortId]);
 
   console.log('✅ Seeding completed successfully!');
