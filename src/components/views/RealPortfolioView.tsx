@@ -24,7 +24,6 @@ export default function RealPortfolioView({
   onSelectView,
   onOpenOrderModal
 }: Props) {
-  const isConnected = portfolio?.broker_status === 'CONNECTED';
   const realPositions = positions.filter((p) => p.portfolio_type === 'REAL');
 
   return (
@@ -38,18 +37,12 @@ export default function RealPortfolioView({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-white">Environment A: Real-Money Demat Portfolio</h1>
-              <span
-                className={`text-[10px] px-2 py-0.5 rounded font-mono font-semibold border ${
-                  isConnected
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                }`}
-              >
-                {isConnected ? 'LIVE BROKER LINKED' : 'DISCONNECTED'}
+              <span className="text-[10px] px-2 py-0.5 rounded font-mono font-semibold border bg-rose-500/20 text-rose-300 border-rose-500/30">
+                LIVE EXECUTION DISABLED
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Direct execution gateway via authorized Indian brokers (Zerodha Kite Connect, Angel One SmartAPI, Upstox).
+              Live broker adapter is not implemented. Displayed balances and holdings are stored records, not a broker-confirmed account snapshot.
             </p>
           </div>
         </div>
@@ -62,15 +55,13 @@ export default function RealPortfolioView({
             <Plug className="h-3.5 w-3.5" />
             <span>Manage Broker API</span>
           </button>
-          {isConnected && (
-            <button
-              onClick={onOpenOrderModal}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-white shadow transition"
-            >
-              <span>Live Order Ticket</span>
-            </button>
-          )}
+
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-xs text-amber-100">
+        <strong className="text-amber-200">Unverified stored data:</strong> broker authentication, live order submission, and balance/fill reconciliation are disabled.
+        Any balances or holdings below are local database records and are not confirmed by a broker. All real-money orders are blocked.
       </div>
 
       {/* If Broker Disconnected: Honest Setup State */}
