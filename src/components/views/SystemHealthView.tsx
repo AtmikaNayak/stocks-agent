@@ -76,10 +76,37 @@ export default function SystemHealthView({ canOperate = false }: Props) {
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-3 py-1.5 text-emerald-300 font-semibold">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            Worker Engine: RUNNING
-          </span>
+          {(() => {
+            const status = data?.workerStatus;
+            // Only claim RUNNING when the scheduler is truly running in-process.
+            const running = status?.status === 'RUNNING_IN_PROCESS';
+            const label = !status
+              ? 'Worker state: unknown'
+              : running
+                ? 'Worker engine: running in this process'
+                : status.evidence?.recentlyActive
+                  ? 'Worker engine: not in this process (recent activity seen)'
+                  : 'Worker state: unknown';
+            return (
+              <span
+                title={status?.summary ?? 'The scheduler state could not be read.'}
+                className={
+                  running
+                    ? 'flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-3 py-1.5 font-semibold text-emerald-300'
+                    : 'flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-950/20 px-3 py-1.5 font-semibold text-amber-200'
+                }
+              >
+                <span
+                  className={
+                    running
+                      ? 'h-2 w-2 rounded-full bg-emerald-400 animate-pulse'
+                      : 'h-2 w-2 rounded-full bg-amber-400'
+                  }
+                />
+                {label}
+              </span>
+            );
+          })()}
         </div>
       </div>
 

@@ -10,6 +10,7 @@ import {
   getLoginThrottle,
   isProxyTrusted,
   loginRateLimitConfig,
+  normalizeIpAddress,
   trustedClientIp
 } from '../src/lib/auth/rate-limit';
 import { USER_A, ensureAllFixtures } from './helpers/auth-fixtures';
@@ -254,5 +255,128 @@ describe('sign-in throttling — spoofable forwarding headers', () => {
       throttle.recordFailure({ email: variant.trim().toLowerCase(), now });
     }
     expect(throttle.evaluate({ email: 'user.a@test.invalid', now })).toMatchObject({ limited: true });
+  });
+});
+
+describe('proxy IP validation — strict address parsing', () => {
+  it('accepts genuine IPv4 and IPv6 addresses', () => {
+    for (const valid of [
+      '203.0.113.9',
+      '0.0.0.0',
+      '255.255.255.255',
+      '10.0.0.1',
+      '::1',
+      '2001:db8::1',
+      '2001:0db8:0000:0000:0000:0000:0000:0001',
+      '::ffff:1.2.3.4'
+    ]) {
+      expect(normalizeIpAddress(valid), valid).not.toBeNull();
+    }
+  });
+
+  it('normalizes IPv6 case so one client maps to one key', () => {
+    expect(normalizeIpAddress('2001:DB8::ABCD')).toBe('2001:db8::abcd');
+  });
+
+  it('rejects malformed IPv4 addresses the old regex accepted', () => {
+    for (const invalid of [
+      '1.2.3.256',      // octet out of range
+      '999.1.1.1',
+      '010.1.1.1',      // leading zero (ambiguous octal)
+      '1.2.3',          // truncated
+      '1.2.3.4.5',      // too many quads
+      '1..3.4',
+      '1.2.3.4.',
+      '.1.2.3.4'
+    ]) {
+      expect(normalizeIpAddress(invalid), invalid).toBeNull();
+    }
+  });
+
+  it('rejects malformed IPv6 addresses the old regex accepted', () => {
+    for (const invalid of [
+      '::g',            // not hex
+      '12345::1',       // group too long
+      '2001:db8:::1',   // triple colon
+      '::1::2',         // two compressions
+      'fe80::1%eth0',   // zone id
+      '1:2:3:4:5:6:7:8:9',
+      '[::1]'           // bracketed form
+    ]) {
+      expect(normalizeIpAddress(invalid), invalid).toBeNull();
+    }
+  });
+
+  it('rejects host:port, hostnames, chains and non-strings', () => {
+    for (const invalid of [
+      '203.0.113.9:443',
+      '203.0.113.9, 10.0.0.1',
+      '203.0.113.9,',
+      'localhost',
+      'example.com',
+      'unknown',
+      'not-an-ip',
+      '1.2.3.4 5.6.7.8',
+      '  ',
+      'x'.repeat(300)
+    ]) {
+      expect(normalizeIpAddress(invalid), invalid).toBeNull();
+    }
+    expect(normalizeIpAddress(undefined)).toBeNull();
+    expect(normalizeIpAddress(null)).toBeNull();
+    expect(normalizeIpAddress(42)).toBeNull();
+    expect(normalizeIpAddress({ ip: '1.2.3.4' })).toBeNull();
+  });
+
+  it('is never used as identity unless proxy trust is explicitly enabled', () => {
+    expect(isProxyTrusted()).toBe(false);
+    const request = loginRequest({ headers: { 'x-forwarded-for': '1.2.3.256' } });
+    expect(trustedClientIp(request)).toBeNull();
+  });
+
+  it('returns null for malformed forwarded addresses even when trust is enabled', () => {
+    process.env[TRUST_PROXY_ENV] = '1';
+    const malformed = [
+      '1.2.3.256',
+      '1.2.3',
+      '010.1.1.1',
+      '203.0.113.9:443',
+      'fe80::1%eth0',
+      '::g',
+      'not-an-ip',
+      '203.0.113.9, 10.0.0.1',
+      '203.0.113.9,',
+      'localhost'
+    ];
+
+    for (const value of malformed) {
+      expect(
+        trustedClientIp(loginRequest({ headers: { 'x-forwarded-for': value } })),
+        value
+      ).toBeNull();
+    }
+  });
+
+  it('returns the normalized address for a valid forwarded value when trust is enabled', () => {
+    process.env[TRUST_PROXY_ENV] = '1';
+    expect(
+      trustedClientIp(loginRequest({ headers: { 'x-forwarded-for': ' 2001:DB8::ABCD ' } }))
+    ).toBe('2001:db8::abcd');
+    expect(
+      trustedClientIp(loginRequest({ headers: { 'x-forwarded-for': '203.0.113.9' } }))
+    ).toBe('203.0.113.9');
+  });
+
+  it('does not let a malformed forwarded address bypass the email limit', async () => {
+    process.env[TRUST_PROXY_ENV] = '1';
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const response = await login(
+        loginRequest({ headers: { 'x-forwarded-for': `1.2.3.${attempt}.999` } })
+      );
+      statuses.push(response.status);
+    }
+    // Malformed values contribute no IP key, so the email key trips at the threshold.
+    expect(statuses).toEqual([401, 401, 401, 401, 429, 429]);
   });
 });

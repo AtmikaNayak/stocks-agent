@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/db';
 import { workerScheduler } from '@/lib/worker/scheduler';
+import { buildWorkerStatus } from '@/lib/worker/status';
 import { requireAuth } from '@/lib/auth/guard';
 import { isOperatorUserId, requireOperator } from '@/lib/auth/operator';
 
@@ -17,6 +18,9 @@ export const dynamic = 'force-dynamic';
  *    returned here.
  *  - `dataFreshness` aggregates providers/freshness across market data points,
  *    which is shared provenance metadata, not per-user data.
+ *  - `workerStatus` reports the scheduler's actual state. It is never forced to
+ *    "running": when the scheduler is not running inside this process the state
+ *    is reported as UNKNOWN, with the last recorded job run as evidence.
  *
  * `viewer.isOperator` is returned so the UI can hide controls that would only
  * produce a 403. It describes the caller's own privileges and nothing else.
@@ -40,9 +44,8 @@ export async function GET(request: Request) {
   return NextResponse.json(
     {
       workerStatus: {
-        isRunning: workerScheduler.isRunning || true, // running in in-process or daemon mode
-        mode: 'ACTIVE_SUPERVISED',
-        uptime: process.uptime()
+        ...buildWorkerStatus(),
+        mode: 'ACTIVE_SUPERVISED'
       },
       viewer: { isOperator: isOperatorUserId(userId) },
       jobs,

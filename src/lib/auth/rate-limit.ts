@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 /**
  * Bounded, in-process rate limiting for sign-in attempts.
  *
@@ -163,8 +165,31 @@ export const TRUSTED_PROXY_HEADER_ENV = 'INVESTPILOT_TRUSTED_PROXY_HEADER';
 export const DEFAULT_PROXY_HEADER = 'x-forwarded-for';
 
 const HEADER_NAME_PATTERN = /^[a-z0-9-]{1,64}$/;
-const IPV4_PATTERN = /^\d{1,3}(\.\d{1,3}){3}$/;
-const IPV6_PATTERN = /^[0-9a-f:.]{2,45}$/i;
+
+/**
+ * Strict IP validation.
+ *
+ * `net.isIP` (a Node built-in — no new dependency) performs real address
+ * parsing, so malformed octets (256, leading zeros), truncated quads, port
+ * suffixes, bare hostnames, IPv6 typos and zone ids are all rejected.
+ * Anything that is not a genuine address returns null and is ignored, which
+ * means a forged header simply contributes no throttling identity.
+ */
+export function normalizeIpAddress(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const candidate = value.trim();
+  if (candidate === '' || candidate.length > 45) return null;
+  // A zone id ("fe80::1%eth0") is link-local scoped and never a client identity.
+  if (candidate.includes('%')) return null;
+  // Bracketed IPv6 ("[::1]") and host:port forms are not addresses.
+  if (candidate.startsWith('[') || candidate.endsWith(']')) return null;
+
+  const version = isIP(candidate);
+  if (version === 4) return candidate;
+  if (version === 6) return candidate.toLowerCase();
+  return null;
+}
 
 /**
  * True only when the deployment explicitly declares that a reverse proxy
@@ -191,15 +216,15 @@ export function trustedClientIp(request: Request): string | null {
   const header = request.headers.get(trustedProxyHeader());
   if (!header) return null;
 
-  // The trusted proxy overwrites the header, so exactly one address is
-  // expected. If several are present the request did not come through the
-  // configured proxy path, so refuse to attribute it rather than guessing.
+  // The trusted proxy overwrites the header with exactly one address. A comma
+  // anywhere therefore means a chain (including a trailing `1.2.3.4,`), which
+  // did not come through the configured proxy path, so it is ignored rather
+  // than guessed at.
+  if (header.includes(',')) return null;
   const parts = header.split(',').map((part) => part.trim()).filter(Boolean);
   if (parts.length !== 1) return null;
 
-  const candidate = parts[0]!;
-  if (!IPV4_PATTERN.test(candidate) && !IPV6_PATTERN.test(candidate)) return null;
-  return candidate;
+  return normalizeIpAddress(parts[0]);
 }
 
 /* -------------------------------------------------------------------------- */

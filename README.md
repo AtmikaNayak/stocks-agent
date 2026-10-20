@@ -59,7 +59,7 @@ HTTP on localhost.
 | `/api/agents` | GET | Session. `agent_runs` and market-wide `agent_observations` are shared research (neither table has a user/portfolio column); `investment_theses` are scoped to the caller. |
 | `/api/agents` | POST | **Operator only** (403 otherwise) — a manual scan writes global observations. |
 | `/api/backtest` | GET/POST | Session. Deterministic computation over global market/strategy data that writes a shared research artifact; it reads no per-user portfolio, order, proposal or credential data. |
-| `/api/system` | GET | Session. Scheduler metadata + the caller's own audit rows only (never other users' or global audit rows). |
+| `/api/system` | GET | Session. Scheduler metadata, an honest `workerStatus`, and the caller's own audit rows only (never other users' or global audit rows). |
 | `/api/system` | POST | **Operator only** (403 otherwise) — triggers named jobs or every job. |
 
 Authorization lives in one shared guard, `src/lib/auth/guard.ts`
@@ -140,6 +140,10 @@ NSE/BSE adapter exists.
 - Shared research actions that ordinary users may still run (`/api/backtest`,
   `GET /api/agents`, `GET /api/system`) have no per-user quota, so they are a
   resource-exhaustion surface rather than a data-disclosure one.
+- Worker state is only *known* when the scheduler runs inside the API process.
+  With the separate `npm run worker` daemon (the documented setup) `/api/system`
+  reports `status: "UNKNOWN"` plus the last recorded job run as evidence; it
+  deliberately never claims the worker is running.
 - Logout clears the client cookie; signed tokens are stateless and cannot be
   revoked server-side before they expire.
 - This is not a hardened internet-facing auth service: there is no MFA, email
