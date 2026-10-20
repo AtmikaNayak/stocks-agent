@@ -130,8 +130,17 @@ export default function MarketView({
                     </td>
                     <td className="py-2.5 text-slate-300">{q.volume.toLocaleString('en-IN')}</td>
                     <td className="py-2.5 font-sans">
-                      <span className="text-[10px] rounded bg-emerald-500/20 text-emerald-400 px-2 py-0.5 font-semibold">
-                        {q.freshness}
+                      <span
+                        className={`text-[10px] rounded px-2 py-0.5 font-semibold ${
+                          q.freshness === 'LIVE' || q.freshness === 'DELAYED_15M' || q.freshness === 'EOD'
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : q.freshness === 'SYNTHETIC'
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : 'bg-rose-500/20 text-rose-300'
+                        }`}
+                        title={q.provider || 'Unknown provider'}
+                      >
+                        {q.freshness}{q.provider ? ` · ${q.provider}` : ''}
                       </span>
                     </td>
                     <td className="py-2.5 text-right font-sans space-x-2">
