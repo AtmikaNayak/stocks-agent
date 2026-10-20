@@ -1,6 +1,7 @@
 import db from '../../db';
 import marketData from '../market-data';
 import { RiskCheckResult, IndianChargesBreakdown, OrderSide } from '../types';
+import { describeFundamentalProvenance, describeQuoteProvenance } from '../data-provenance';
 
 export interface PreExecutionDecisionInput {
   portfolioId: string;
@@ -35,6 +36,27 @@ export class ExplainabilityAgent {
       [assetId]
     );
     const fund = asset ? await marketData.getFundamentals(asset.symbol) : null;
+    const fundProvenance = fund ? describeFundamentalProvenance(fund.source) : null;
+    const quote = asset ? await marketData.getQuote(asset.symbol) : null;
+    const quoteProvenance = quote
+      ? describeQuoteProvenance({ freshness: quote.freshness, provider: quote.provider })
+      : null;
+
+    // Never invent a missing metric: say plainly when it is unavailable.
+    const metric = (value: number | null | undefined, suffix: string, name: string): string =>
+      value === null || value === undefined || !Number.isFinite(Number(value))
+        ? `${name} unavailable`
+        : `${name} ${Number(value)}${suffix}`;
+    const fundamentalsText = fundProvenance?.isVerified
+      ? `${metric(fund?.roce, '%', 'ROCE')}, ${metric(fund?.debtToEquity, '', 'D/E')}, ${metric(fund?.operatingMargin, '%', 'OPM')}, ${metric(fund?.peRatio, 'x', 'P/E')} (source: ${fundProvenance.provider}).`
+      : fundProvenance
+        ? `Illustrative demo fundamentals only — ${metric(fund?.roce, '%', 'ROCE')}, ${metric(fund?.debtToEquity, '', 'D/E')}, ${metric(fund?.peRatio, 'x', 'P/E')}. These are not audited and were not used to justify the order.`
+        : `No fundamentals are stored for this company in this dataset.`;
+    const priceText = quoteProvenance
+      ? quoteProvenance.isVerified
+        ? `Prices are verified ${quoteProvenance.freshness} data from ${quoteProvenance.provider}.`
+        : `Prices are simulated demo fixtures (${quoteProvenance.provider ?? 'unknown source'}), not exchange data.`
+      : `Price provenance is unknown.`;
     const portfolio = db.queryOne<{ total_value: number; current_cash: number }>(
       'SELECT total_value, current_cash FROM portfolios WHERE id = ?',
       [portfolioId]
@@ -45,12 +67,12 @@ export class ExplainabilityAgent {
 
     // Plain Language for Beginners
     const reasoningPlain = action === 'BUY'
-      ? `We purchased ${quantity} shares of ${asset?.name || assetId} at ₹${price} per share. This company is a market leader in ${asset?.sector || 'India'} with low debt and high profits. The investment represents ${positionPct}% of your total portfolio, well within your safe limit of 15%.`
+      ? `We purchased ${quantity} shares of ${asset?.name || assetId} at ₹${price} per share in the ${asset?.sector || 'India'} sector. The investment represents ${positionPct}% of your total portfolio, inside the 15% single-company limit. ${priceText}`
       : `We sold ${quantity} shares of ${asset?.name || assetId} at ₹${price} to lock in proceeds and rebalance your portfolio cash buffer.`;
 
     // Advanced Quantitative Analysis for Experienced Users
     const reasoningAdvanced = action === 'BUY'
-      ? `Capital allocation: ₹${(quantity * price).toLocaleString('en-IN')} (${positionPct}% portfolio weight). Fundamentals: ROCE ${fund?.roce || 18}%, D/E ${fund?.debtToEquity || 0.1}, OPM ${fund?.operatingMargin || 20}%, P/E ${fund?.peRatio || 25}x. Statutory charges: ₹${charges.totalCharges} (STT: ₹${charges.stt}, Exchange: ₹${charges.exchangeTurnoverCharges}, GST: ₹${charges.gst}). Post-trade cash reserve remains at ${riskResult.cashRemainingAfter} (safe buffer >= 20%).`
+      ? `Capital allocation: ₹${(quantity * price).toLocaleString('en-IN')} (${positionPct}% portfolio weight). Fundamentals: ${fundamentalsText} ${priceText} Estimated charges: ₹${charges.totalCharges} (STT: ₹${charges.stt}, exchange: ₹${charges.exchangeTurnoverCharges}, GST: ₹${charges.gst}). Post-trade cash remaining: ₹${riskResult.cashRemainingAfter} (buffer >= 20%).`
       : `Order liquidation: ${quantity} units @ ₹${price}. Gross turnover ₹${charges.turnover}. Net proceeds ₹${charges.netAmount} credited to portfolio cash ledger. Risk exposure reduced.`;
 
     const whatCouldGoWrong = action === 'BUY'
@@ -89,13 +111,27 @@ export class ExplainabilityAgent {
     if (action === 'BUY') {
       db.execute(`
         INSERT INTO decision_evidence (id, decision_id, evidence_type, title, detail, source, source_timestamp, is_supporting)
-        VALUES (?, ?, 'FINANCIAL_RATIO', 'Audited ROCE & Low Leverage', ?, 'NSE Audited Filings', datetime('now'), 1)
-      `, [`evi_${Date.now()}_1`, decisionId, `Return on Capital Employed is ${fund?.roce || 18}%, and Debt-to-Equity is ${fund?.debtToEquity || 0.1}.`]);
+        VALUES (?, ?, 'FINANCIAL_RATIO', 'Return on capital and leverage', ?, ?, datetime('now'), 1)
+      `, [
+        `evi_${Date.now()}_1`,
+        decisionId,
+        fundProvenance?.isVerified
+          ? `ROCE is ${metric(fund?.roce, '%', 'ROCE')}, and Debt-to-Equity is ${metric(fund?.debtToEquity, '', 'D/E')}.`
+          : `Fundamentals for this company are demo fixtures and were not used as justification.`,
+        fundProvenance?.isVerified ? (fundProvenance.provider ?? 'verified fundamentals source') : 'SYNTHETIC_DEMO'
+      ]);
 
       db.execute(`
         INSERT INTO decision_evidence (id, decision_id, evidence_type, title, detail, source, source_timestamp, is_supporting)
-        VALUES (?, ?, 'VALUATION', 'Valuation Multiples', ?, 'NSE Price Feed', datetime('now'), 0)
-      `, [`evi_${Date.now()}_2`, decisionId, `Trailing P/E ratio is ${fund?.peRatio || 25}x, near 5-year historical median, offering moderate rather than deep valuation discount.`]);
+        VALUES (?, ?, 'VALUATION', 'Valuation multiple', ?, ?, datetime('now'), 0)
+      `, [
+        `evi_${Date.now()}_2`,
+        decisionId,
+        fundProvenance?.isVerified
+          ? `Trailing P/E is ${metric(fund?.peRatio, 'x', 'P/E')}; no historical median comparison is stored in this dataset.`
+          : `No verified valuation multiple is available for this company in this dataset.`,
+        quoteProvenance?.isVerified ? (quoteProvenance.provider ?? 'verified price feed') : 'SYNTHETIC_DEMO'
+      ]);
     }
 
     return {
@@ -164,9 +200,9 @@ export class ExplainabilityAgent {
     if (qLower.includes('why') && (qLower.includes('decision') || qLower.includes('buy') || qLower.includes('invest'))) {
       return {
         question,
-        answerPlain: `Here is the verified reason for our latest action (${latest.action} ${latest.quantity} ${latest.symbol} at ₹${latest.price}): ${latest.reasoning_plain_language}`,
+        answerPlain: `Here is the recorded reason for our latest action (${latest.action} ${latest.quantity} ${latest.symbol} at ₹${latest.price}): ${latest.reasoning_plain_language}`,
         answerAdvanced: `Decision ID: ${latest.id} executed at ${latest.decision_timestamp}. Quantitative rationale: ${latest.reasoning_advanced}. Risk validation: ${latest.risk_assessment_summary}`,
-        sources: [`Decision Record ${latest.id}`, 'NSE Market Snapshot']
+        sources: [`Decision Record ${latest.id}`, 'Stored market data snapshot (demo fixtures in this build)']
       };
     }
 
@@ -182,7 +218,7 @@ export class ExplainabilityAgent {
     if (qLower.includes('alternative') || qLower.includes('other')) {
       return {
         question,
-        answerPlain: `Before choosing ${latest.symbol}, the AI evaluated keeping 100% cash in liquid reserve or investing in other NIFTY 50 blue chips. ${latest.symbol} was selected because of its high return on capital and safe debt levels.`,
+        answerPlain: `Before choosing ${latest.symbol}, the AI compared keeping the cash reserve against allocating it to the candidate company. ${latest.symbol} was proposed because it passed the fixed risk limits; the recorded fundamentals were not verified in this build.`,
         answerAdvanced: `Alternative capital allocations considered: liquid money market buffer, index tracking, or alternate sector heavyweights. Decision ruled in favor of ${latest.symbol} due to superior risk-adjusted balance sheet metrics.`,
         sources: [`Decision Evidence for ${latest.symbol}`]
       };
@@ -269,6 +305,7 @@ export class ExplainabilityAgent {
 
     return {
       reportDate: '2026-10-20',
+      dataProvenance: 'Demo fixtures: prices, fundamentals and news in this build are illustrative, not exchange-verified.',
       portfolio: portfolio || { name: 'Virtual Wealth Builder', total_value: 25000, current_cash: 25000 },
       positions,
       recentExecutions,

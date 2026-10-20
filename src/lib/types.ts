@@ -35,7 +35,7 @@ export type Horizon = 'LONG_TERM' | 'SHORT_TERM';
 export type BrokerName = 'ZERODHA' | 'ANGEL_ONE' | 'UPSTOX';
 export type BrokerStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'REVOKED' | 'ERROR';
 
-export type DataFreshness = 'LIVE' | 'DELAYED_15M' | 'EOD' | 'HISTORICAL' | 'STALE';
+export type DataFreshness = 'LIVE' | 'DELAYED_15M' | 'EOD' | 'HISTORICAL' | 'SYNTHETIC' | 'STALE';
 
 export interface IndianChargesBreakdown {
   turnover: number;

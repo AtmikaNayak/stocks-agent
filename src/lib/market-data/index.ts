@@ -44,6 +44,30 @@ export class MarketDataService implements IMarketDataProvider {
     );
 
     if (!latestPoint) return null;
+    if (
+      !Number.isFinite(latestPoint.close) || latestPoint.close <= 0 ||
+      !Number.isFinite(latestPoint.open) || latestPoint.open <= 0 ||
+      !Number.isFinite(latestPoint.high) || latestPoint.high <= 0 ||
+      !Number.isFinite(latestPoint.low) || latestPoint.low <= 0
+    ) return null;
+
+    // Flag old or future-dated non-synthetic quotes as stale. Synthetic fixtures
+    // remain visible for simulator demos but are never represented as live data.
+    const pointTimestamp = Date.parse(`${latestPoint.timestamp}T00:00:00Z`);
+    const quoteAgeMs = Date.now() - pointTimestamp;
+    const maxQuoteAgeMs = 5 * 24 * 60 * 60 * 1000;
+    const timestampInvalid = !Number.isFinite(pointTimestamp) || quoteAgeMs < -5 * 60 * 1000;
+    const supportedFreshness = new Set<DataFreshness>([
+      'LIVE', 'DELAYED_15M', 'EOD', 'HISTORICAL', 'SYNTHETIC', 'STALE'
+    ]);
+    const freshnessKnown = supportedFreshness.has(latestPoint.freshness_status);
+    const isStale = !freshnessKnown ||
+      latestPoint.freshness_status === 'STALE' ||
+      timestampInvalid ||
+      (latestPoint.freshness_status !== 'SYNTHETIC' && quoteAgeMs > maxQuoteAgeMs);
+    const quoteFreshness: DataFreshness = latestPoint.freshness_status === 'SYNTHETIC' && freshnessKnown
+      ? 'SYNTHETIC'
+      : isStale ? 'STALE' : latestPoint.freshness_status;
 
     // Previous close for change calculation
     const prevPoint = db.queryOne<{ close: number }>(
@@ -72,7 +96,7 @@ export class MarketDataService implements IMarketDataProvider {
       vwap: latestPoint.vwap || latestPoint.close,
       timestamp: latestPoint.timestamp,
       provider: latestPoint.provider,
-      freshness: latestPoint.freshness_status,
+      freshness: quoteFreshness,
       qualityScore: latestPoint.quality_score
     };
   }

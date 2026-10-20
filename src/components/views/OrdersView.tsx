@@ -34,24 +34,24 @@ export default function OrdersView({ activePortfolioType }: Props) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
             <ListOrdered className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Orders & Statutory Execution Ledger</h1>
-            <p className="text-xs text-slate-400">
-              Audit record of all submitted orders, fills, and regulatory charges (STT, NSE fees, GST, Stamp Duty).
+            <h1 className="text-lg font-bold text-white">Orders & charges</h1>
+            <p className="text-xs text-ink-2">
+              Every simulated order and fill, with the Indian charges (STT, exchange fees, GST, stamp duty) itemised.
             </p>
           </div>
         </div>
 
-        <div className="flex rounded-lg border border-slate-700 bg-slate-950 p-1 text-xs font-semibold">
+        <div className="flex rounded-lg border border-white/[0.12] bg-black/30 p-1 text-xs font-semibold">
           <button
             onClick={() => setTab('executions')}
             className={`px-3 py-1 rounded transition ${
-              tab === 'executions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              tab === 'executions' ? 'bg-blue-600 text-white' : 'text-ink-2 hover:text-white'
             }`}
           >
             Fills & Charges ({filteredExecutions.length})
@@ -59,7 +59,7 @@ export default function OrdersView({ activePortfolioType }: Props) {
           <button
             onClick={() => setTab('orders')}
             className={`px-3 py-1 rounded transition ${
-              tab === 'orders' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              tab === 'orders' ? 'bg-blue-600 text-white' : 'text-ink-2 hover:text-white'
             }`}
           >
             Submitted Orders ({filteredOrders.length})
@@ -68,21 +68,21 @@ export default function OrdersView({ activePortfolioType }: Props) {
       </div>
 
       {loading ? (
-        <div className="py-20 text-center text-xs text-slate-400">Loading order records...</div>
+        <div className="py-20 text-center text-xs text-ink-2">Loading order records...</div>
       ) : tab === 'executions' ? (
         /* Executions Table with Charges Breakdown */
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="card p-5">
           <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-4">
-            Execution Receipts with SEBI & Exchange Breakdown
+            Simulated fills with a full charge breakdown
           </h2>
 
           {filteredExecutions.length === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-500">No executions recorded in this portfolio context.</p>
+            <p className="py-8 text-center text-xs text-ink-3">No executions recorded in this portfolio context.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 font-sans">
+                  <tr className="border-b border-white/[0.08] text-[11px] uppercase tracking-wider text-ink-2 font-sans">
                     <th className="pb-2">Time</th>
                     <th className="pb-2">Instrument</th>
                     <th className="pb-2">Side</th>
@@ -97,10 +97,10 @@ export default function OrdersView({ activePortfolioType }: Props) {
                     <th className="pb-2 font-bold text-white">Net Total (₹)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-white/[0.06]">
                   {filteredExecutions.map((e) => (
-                    <tr key={e.id} className="hover:bg-slate-800/30">
-                      <td className="py-2.5 text-slate-500 text-[11px]">{e.executed_at}</td>
+                    <tr key={e.id} className="hover:bg-white/[0.03]">
+                      <td className="py-2.5 text-ink-3 text-[11px]">{e.executed_at}</td>
                       <td className="py-2.5 font-bold text-white font-sans">{e.symbol}</td>
                       <td className="py-2.5 font-sans">
                         <span
@@ -111,15 +111,15 @@ export default function OrdersView({ activePortfolioType }: Props) {
                           {e.side}
                         </span>
                       </td>
-                      <td className="py-2.5 text-slate-200">{e.quantity}</td>
+                      <td className="py-2.5 text-ink">{e.quantity}</td>
                       <td className="py-2.5 text-white font-semibold">₹{e.fill_price.toFixed(2)}</td>
-                      <td className="py-2.5 text-slate-300">₹{e.gross_amount.toFixed(2)}</td>
-                      <td className="py-2.5 text-slate-400">₹{e.brokerage.toFixed(2)}</td>
+                      <td className="py-2.5 text-ink-2">₹{e.gross_amount.toFixed(2)}</td>
+                      <td className="py-2.5 text-ink-2">₹{e.brokerage.toFixed(2)}</td>
                       <td className="py-2.5 text-amber-400">₹{e.stt_charges.toFixed(2)}</td>
-                      <td className="py-2.5 text-slate-400">
+                      <td className="py-2.5 text-ink-2">
                         ₹{(e.exchange_turnover_charges + e.sebi_charges).toFixed(2)}
                       </td>
-                      <td className="py-2.5 text-slate-400">₹{e.gst.toFixed(2)}</td>
+                      <td className="py-2.5 text-ink-2">₹{e.gst.toFixed(2)}</td>
                       <td className="py-2.5 text-amber-300 font-semibold">₹{e.total_charges.toFixed(2)}</td>
                       <td className="py-2.5 font-bold text-white">₹{e.net_amount.toFixed(2)}</td>
                     </tr>
@@ -131,15 +131,15 @@ export default function OrdersView({ activePortfolioType }: Props) {
         </div>
       ) : (
         /* Orders Table */
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <div className="card p-5">
           <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Submitted Orders</h2>
           {filteredOrders.length === 0 ? (
-            <p className="py-8 text-center text-xs text-slate-500">No orders placed yet.</p>
+            <p className="py-8 text-center text-xs text-ink-3">No orders placed yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 font-sans">
+                  <tr className="border-b border-white/[0.08] text-[11px] uppercase tracking-wider text-ink-2 font-sans">
                     <th className="pb-2">Time</th>
                     <th className="pb-2">Symbol</th>
                     <th className="pb-2">Side</th>
@@ -150,17 +150,17 @@ export default function OrdersView({ activePortfolioType }: Props) {
                     <th className="pb-2">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-white/[0.06]">
                   {filteredOrders.map((o) => (
-                    <tr key={o.id} className="hover:bg-slate-800/30">
-                      <td className="py-2 text-slate-500 text-[11px]">{o.submitted_at}</td>
+                    <tr key={o.id} className="hover:bg-white/[0.03]">
+                      <td className="py-2 text-ink-3 text-[11px]">{o.submitted_at}</td>
                       <td className="py-2 font-bold text-white font-sans">{o.symbol}</td>
                       <td className="py-2 font-sans font-semibold">
                         <span className={o.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}>{o.side}</span>
                       </td>
-                      <td className="py-2 font-sans text-slate-400 text-[11px]">{o.order_mode}</td>
-                      <td className="py-2 font-sans text-slate-300">{o.product_type}</td>
-                      <td className="py-2 text-slate-200">{o.quantity}</td>
+                      <td className="py-2 font-sans text-ink-2 text-[11px]">{o.order_mode}</td>
+                      <td className="py-2 font-sans text-ink-2">{o.product_type}</td>
+                      <td className="py-2 text-ink">{o.quantity}</td>
                       <td className="py-2 text-white">₹{o.price.toFixed(2)}</td>
                       <td className="py-2 font-sans">
                         <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-semibold">

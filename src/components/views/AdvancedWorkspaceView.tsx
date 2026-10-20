@@ -22,15 +22,15 @@ export default function AdvancedWorkspaceView({ quotes, onOpenOrderModal }: Prop
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-slate-800 text-blue-400">
+          <div className="p-2.5 rounded-xl bg-white/[0.06] text-blue-400">
             <Terminal className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Advanced Quantitative Trader Workspace</h1>
-            <p className="text-xs text-slate-400">
-              Terminal layout: market depth simulation, tick velocity, rapid execution tickets.
+            <h1 className="text-lg font-bold text-white">Advanced workspace</h1>
+            <p className="text-xs text-ink-2">
+              A denser trading desk for experienced users: simulated market depth and quick order tickets.
             </p>
           </div>
         </div>
@@ -43,7 +43,7 @@ export default function AdvancedWorkspaceView({ quotes, onOpenOrderModal }: Prop
               className={`px-2.5 py-1 rounded text-xs font-mono font-semibold transition ${
                 selectedSymbol === q.symbol
                   ? 'bg-blue-600 text-white shadow'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
+                  : 'bg-white/[0.06] text-ink-2 hover:text-white'
               }`}
             >
               {q.symbol}
@@ -56,11 +56,11 @@ export default function AdvancedWorkspaceView({ quotes, onOpenOrderModal }: Prop
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 cols: Quote Details & Depth Simulation */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <div className="card p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-xl font-bold text-white font-mono">{activeQuote?.symbol}</h2>
-                <span className="text-xs text-slate-400">{activeQuote?.name}</span>
+                <span className="text-xs text-ink-2">{activeQuote?.name}</span>
               </div>
               <div className="text-right">
                 <span className="text-2xl font-bold text-white font-mono block">
@@ -74,13 +74,13 @@ export default function AdvancedWorkspaceView({ quotes, onOpenOrderModal }: Prop
 
             {/* Depth simulation table (5 Best Bids / Asks) */}
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-slate-400 block">
+              <span className="text-xs font-semibold text-ink-2 block">
                 Simulated Market Depth (L2 Order Book)
               </span>
               <div className="grid grid-cols-2 gap-4 text-xs font-mono">
                 {/* Bids */}
                 <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/10 p-3">
-                  <div className="flex justify-between text-slate-400 font-sans pb-1 border-b border-slate-800">
+                  <div className="flex justify-between text-ink-2 font-sans pb-1 border-b border-white/[0.08]">
                     <span>Bid Qty</span>
                     <span>Bid Price (₹)</span>
                   </div>
@@ -95,7 +95,7 @@ export default function AdvancedWorkspaceView({ quotes, onOpenOrderModal }: Prop
 
                 {/* Asks */}
                 <div className="rounded-lg border border-rose-500/20 bg-rose-950/10 p-3">
-                  <div className="flex justify-between text-slate-400 font-sans pb-1 border-b border-slate-800">
+                  <div className="flex justify-between text-ink-2 font-sans pb-1 border-b border-white/[0.08]">
                     <span>Ask Price (₹)</span>
                     <span>Ask Qty</span>
                   </div>
@@ -113,23 +113,23 @@ export default function AdvancedWorkspaceView({ quotes, onOpenOrderModal }: Prop
         </div>
 
         {/* Right col: Rapid Execution Ticket */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+        <div className="card p-5 space-y-4">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider">
             Fast Execution Ticket
           </h3>
 
-          <div className="rounded-lg bg-slate-950 p-4 space-y-3 text-xs">
+          <div className="rounded-lg bg-black/30 p-4 space-y-3 text-xs">
             <div className="flex justify-between">
-              <span className="text-slate-400">Target Instrument:</span>
+              <span className="text-ink-2">Target Instrument:</span>
               <span className="font-bold text-white font-mono">{activeQuote?.symbol}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Last Trade Price:</span>
+              <span className="text-ink-2">Last Trade Price:</span>
               <span className="font-bold text-white font-mono">₹{activeQuote?.price.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">NSE Tick Size:</span>
-              <span className="font-mono text-slate-300">₹0.05</span>
+              <span className="text-ink-2">NSE Tick Size:</span>
+              <span className="font-mono text-ink-2">₹0.05</span>
             </div>
 
             <div className="pt-2 flex gap-2">

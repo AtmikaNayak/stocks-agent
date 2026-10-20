@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Receipt
 } from 'lucide-react';
+import { titleCase } from '@/lib/format';
 
 interface Props {
   portfolio: any;
@@ -40,24 +41,26 @@ export default function VirtualPortfolioView({
   const investedVal = portfolio?.invested_value || 0;
   const totalReturn = totalValue - initialCap;
   const returnPct = initialCap > 0 ? ((totalReturn / initialCap) * 100).toFixed(2) : '0.00';
+  const cashPct = totalValue > 0 ? ((currentCash / totalValue) * 100).toFixed(1) : '100.0';
+  const investedPct = totalValue > 0 ? ((investedVal / totalValue) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
             <Layers className="h-6 w-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-white">Environment B: Virtual Money Portfolio</h1>
+              <h1 className="text-lg font-bold text-white">Practice portfolio</h1>
               <span className="text-[10px] px-2 py-0.5 rounded font-mono font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                Persistent Simulator
+                Practice account
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              Verified NSE market quotes with simulated Indian transaction charges (STT, GST, Exchange charges, Stamp Duty).
+            <p className="text-xs text-ink-2">
+              Simulated quotes from the demo dataset, with realistic Indian charges (STT, exchange fees, GST, stamp duty).
             </p>
           </div>
         </div>
@@ -82,8 +85,8 @@ export default function VirtualPortfolioView({
 
       {/* Metrics Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <span className="text-xs text-slate-400 block mb-1">Total Virtual NAV</span>
+        <div className="card p-4">
+          <span className="text-xs text-ink-2 block mb-1">Total value</span>
           <span className="text-xl font-bold text-white">
             ₹{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </span>
@@ -100,56 +103,56 @@ export default function VirtualPortfolioView({
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <span className="text-xs text-slate-400 block mb-1">Available Liquid Cash</span>
-          <span className="text-xl font-bold text-slate-200">
+        <div className="card p-4">
+          <span className="text-xs text-ink-2 block mb-1">Cash available</span>
+          <span className="text-xl font-bold text-ink">
             ₹{currentCash.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </span>
-          <span className="text-[11px] text-slate-500 block mt-1">
-            Cash buffer: {((currentCash / totalValue) * 100).toFixed(1)}% (Min 20%)
+          <span className="text-[11px] text-ink-3 block mt-1">
+            Cash cushion: {cashPct}% (minimum 20%)
           </span>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <span className="text-xs text-slate-400 block mb-1">Invested Value</span>
-          <span className="text-xl font-bold text-slate-300">
+        <div className="card p-4">
+          <span className="text-xs text-ink-2 block mb-1">Money in shares</span>
+          <span className="text-xl font-bold text-ink-2">
             ₹{investedVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </span>
-          <span className="text-[11px] text-slate-500 block mt-1">
-            Exposure: {((investedVal / totalValue) * 100).toFixed(1)}% (Max 80%)
+          <span className="text-[11px] text-ink-3 block mt-1">
+            Invested: {investedPct}% (maximum 80%)
           </span>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <span className="text-xs text-slate-400 block mb-1">Realised P&L</span>
+        <div className="card p-4">
+          <span className="text-xs text-ink-2 block mb-1">Profit booked (sold)</span>
           <span className={`text-xl font-bold ${portfolio?.realised_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
             ₹{(portfolio?.realised_pnl || 0).toFixed(2)}
           </span>
-          <span className="text-[11px] text-slate-500 block mt-1">
-            Unrealised: ₹{(portfolio?.unrealised_pnl || 0).toFixed(2)}
+          <span className="text-[11px] text-ink-3 block mt-1">
+            Still on paper: ₹{(portfolio?.unrealised_pnl || 0).toFixed(2)}
           </span>
         </div>
       </div>
 
       {/* Tabs: Holdings vs Cash Ledger */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+      <div className="card p-5 space-y-4">
+        <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <div className="flex gap-2 text-xs font-semibold">
             <button
               onClick={() => setTab('holdings')}
               className={`px-3 py-1.5 rounded-lg transition ${
-                tab === 'holdings' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                tab === 'holdings' ? 'bg-blue-600 text-white' : 'text-ink-2 hover:text-white'
               }`}
             >
-              Active Holdings ({virtualPositions.length})
+              Shares you own ({virtualPositions.length})
             </button>
             <button
               onClick={() => setTab('ledger')}
               className={`px-3 py-1.5 rounded-lg transition ${
-                tab === 'ledger' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                tab === 'ledger' ? 'bg-blue-600 text-white' : 'text-ink-2 hover:text-white'
               }`}
             >
-              Double-Entry Cash Ledger ({virtualLedger.length})
+              Cash movements ({virtualLedger.length})
             </button>
           </div>
         </div>
@@ -157,39 +160,39 @@ export default function VirtualPortfolioView({
         {tab === 'holdings' && (
           virtualPositions.length === 0 ? (
             <div className="py-12 text-center">
-              <Layers className="h-8 w-8 text-slate-600 mx-auto mb-2" />
-              <p className="text-xs text-slate-400">No active positions in the virtual portfolio.</p>
+              <Layers className="h-8 w-8 text-ink-3 mx-auto mb-2" />
+              <p className="text-xs text-ink-2">You don't own any shares yet. A practice trade is the easiest way to start.</p>
               <button
                 onClick={() => onOpenOrderModal()}
                 className="mt-3 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"
               >
-                Place First Simulated Order
+                Make your first practice trade
               </button>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 font-sans">
-                    <th className="pb-2">Symbol</th>
-                    <th className="pb-2">Quantity</th>
-                    <th className="pb-2">Avg Buy (₹)</th>
-                    <th className="pb-2">Current (₹)</th>
-                    <th className="pb-2">Total Value (₹)</th>
-                    <th className="pb-2">Unrealised P&L</th>
-                    <th className="pb-2 text-right">Actions</th>
+                  <tr className="border-b border-white/[0.08] text-[11px] uppercase tracking-wider text-ink-2 font-sans">
+                    <th className="pb-2">Company</th>
+                    <th className="pb-2">Shares</th>
+                    <th className="pb-2">Avg. price</th>
+                    <th className="pb-2">Price now</th>
+                    <th className="pb-2">Value</th>
+                    <th className="pb-2">Profit / loss</th>
+                    <th className="pb-2 text-right"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-white/[0.06]">
                   {virtualPositions.map((pos) => {
                     const isPos = pos.unrealised_pnl >= 0;
                     return (
-                      <tr key={pos.id} className="hover:bg-slate-800/30">
+                      <tr key={pos.id} className="hover:bg-white/[0.03]">
                         <td className="py-2.5 font-sans font-bold text-white">{pos.symbol}</td>
-                        <td className="py-2.5 text-slate-300">{pos.quantity}</td>
-                        <td className="py-2.5 text-slate-300">{pos.average_buy_price.toFixed(2)}</td>
+                        <td className="py-2.5 text-ink-2">{pos.quantity}</td>
+                        <td className="py-2.5 text-ink-2">{pos.average_buy_price.toFixed(2)}</td>
                         <td className="py-2.5 text-white font-semibold">{pos.current_price.toFixed(2)}</td>
-                        <td className="py-2.5 text-slate-200">{pos.current_market_value.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 text-ink">{pos.current_market_value.toLocaleString('en-IN')}</td>
                         <td className="py-2.5">
                           <span className={`font-semibold ${isPos ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {isPos ? '+' : ''}₹{pos.unrealised_pnl.toFixed(2)} ({pos.unrealised_pnl_pct.toFixed(2)}%)
@@ -198,9 +201,9 @@ export default function VirtualPortfolioView({
                         <td className="py-2.5 text-right font-sans">
                           <button
                             onClick={() => onOpenOrderModal({ id: pos.asset_id, symbol: pos.symbol, price: pos.current_price })}
-                            className="text-[11px] rounded bg-slate-800 hover:bg-slate-700 px-2 py-1 text-slate-200"
+                            className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink transition-colors hover:bg-white/[0.09]"
                           >
-                            Trade
+                            Practise
                           </button>
                         </td>
                       </tr>
@@ -216,28 +219,28 @@ export default function VirtualPortfolioView({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-mono">
               <thead>
-                <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 font-sans">
-                  <th className="pb-2">Timestamp</th>
-                  <th className="pb-2">Type</th>
-                  <th className="pb-2">Description</th>
-                  <th className="pb-2">Amount (₹)</th>
-                  <th className="pb-2">Balance After (₹)</th>
+                <tr className="border-b border-white/[0.08] text-[11px] uppercase tracking-wider text-ink-2 font-sans">
+                  <th className="pb-2">When</th>
+                  <th className="pb-2">What happened</th>
+                  <th className="pb-2">Details</th>
+                  <th className="pb-2">Amount</th>
+                  <th className="pb-2">Balance after</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-white/[0.06]">
                 {virtualLedger.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-slate-800/30">
-                    <td className="py-2 text-slate-500 text-[11px]">{entry.created_at}</td>
+                  <tr key={entry.id} className="hover:bg-white/[0.03]">
+                    <td className="py-2 text-ink-3 text-[11px]">{entry.created_at}</td>
                     <td className="py-2">
-                      <span className="font-semibold text-slate-300 font-sans">{entry.entry_type}</span>
+                      <span className="font-semibold text-ink-2 font-sans">{titleCase(entry.entry_type)}</span>
                     </td>
-                    <td className="py-2 text-slate-400 text-xs font-sans max-w-xs truncate">{entry.description}</td>
+                    <td className="py-2 text-ink-2 text-xs font-sans max-w-xs truncate">{entry.description}</td>
                     <td className="py-2 font-bold">
                       <span className={entry.amount >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
                         {entry.amount >= 0 ? '+' : ''}₹{entry.amount.toFixed(2)}
                       </span>
                     </td>
-                    <td className="py-2 text-slate-200">₹{entry.balance_after.toFixed(2)}</td>
+                    <td className="py-2 text-ink">₹{entry.balance_after.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>

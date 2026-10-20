@@ -59,31 +59,36 @@ export default function BacktestingView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
             <History className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Quantitative Backtesting & Strategy Lab</h1>
-            <p className="text-xs text-slate-400">
-              Backtest with realistic Indian transaction costs (STT, NSE turnover, GST) and strictly ZERO look-ahead bias.
+            <h1 className="text-lg font-bold text-white">Backtesting: replay an idea</h1>
+            <p className="text-xs text-ink-2">
+              See how a set of rules would have behaved on old sample prices, including estimated charges. Demo candles only — this is not evidence a strategy works.
             </p>
           </div>
         </div>
       </div>
 
+      <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-xs text-amber-100">
+        <strong className="text-amber-200">Synthetic-data warning:</strong> this build has no verified historical market feed.
+        Run outputs demonstrate simulator mechanics only and must not be treated as validated returns, out-of-sample results, or investment advice.
+      </div>
+
       {/* Configuration & Trigger */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+      <div className="card p-5 space-y-4">
         <h2 className="text-sm font-bold text-white uppercase tracking-wider">Configure Backtest Simulation</h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           <div>
-            <label className="block text-slate-400 font-semibold mb-1">Strategy Version</label>
+            <label className="block text-ink-2 font-semibold mb-1">Strategy Version</label>
             <select
               value={selectedStrategy}
               onChange={(e) => setSelectedStrategy(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2.5 text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.12] bg-black/30 p-2.5 text-white focus:border-indigo-500 focus:outline-none"
             >
               <option value="ver_strat_1_v12">Value & Quality Compounder (v1.2-conservative)</option>
               <option value="ver_strat_2_v20">NSE Momentum Breakout (v2.0-momentum)</option>
@@ -91,23 +96,23 @@ export default function BacktestingView() {
           </div>
 
           <div>
-            <label className="block text-slate-400 font-semibold mb-1">Starting Capital (₹)</label>
+            <label className="block text-ink-2 font-semibold mb-1">Starting Capital (₹)</label>
             <input
               type="number"
               value={initialCapital}
               onChange={(e) => setInitialCapital(Number(e.target.value))}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2.5 text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.12] bg-black/30 p-2.5 text-white focus:border-indigo-500 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-slate-400 font-semibold mb-1">Assumed Slippage (%)</label>
+            <label className="block text-ink-2 font-semibold mb-1">Assumed Slippage (%)</label>
             <input
               type="number"
               step="0.01"
               value={slippagePct}
               onChange={(e) => setSlippagePct(parseFloat(e.target.value))}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2.5 text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.12] bg-black/30 p-2.5 text-white focus:border-indigo-500 focus:outline-none"
             />
           </div>
         </div>
@@ -128,37 +133,72 @@ export default function BacktestingView() {
       {activeResult && (
         <div className="rounded-xl border border-indigo-500/40 bg-indigo-950/20 p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
-            <h3 className="font-bold text-sm text-white">Backtest Results (Run #{activeResult.id})</h3>
-            <span className="text-xs px-2 py-0.5 rounded font-mono bg-indigo-500/30 text-indigo-300">
-              Out-of-Sample Validated
+            <h3 className="font-bold text-sm text-white">Simulation results (Run #{activeResult.id})</h3>
+            <span className="text-xs px-2 py-0.5 rounded font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Not out-of-sample validated
             </span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-            <div className="rounded-lg bg-slate-950/80 p-3">
-              <span className="text-slate-400 block">Total Return</span>
-              <span className="text-lg font-bold text-emerald-400">+{activeResult.totalReturnPct}%</span>
+            <div className="rounded-lg bg-black/45 p-3">
+              <span className="text-ink-2 block">Total Return</span>
+              <span className={`text-lg font-bold ${activeResult.totalReturnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {activeResult.totalReturnPct >= 0 ? '+' : ''}{activeResult.totalReturnPct}%
+              </span>
             </div>
-            <div className="rounded-lg bg-slate-950/80 p-3">
-              <span className="text-slate-400 block">Sharpe Ratio</span>
-              <span className="text-lg font-bold text-white">{activeResult.sharpeRatio}</span>
+            <div className="rounded-lg bg-black/45 p-3">
+              <span className="text-ink-2 block">Sharpe Ratio</span>
+              <span className="text-lg font-bold text-white">
+                {activeResult.sharpeRatio === null ? 'Not reported' : activeResult.sharpeRatio}
+              </span>
+              <span className="text-[10px] text-ink-3 block">
+                {activeResult.ratiosReliable ? `${activeResult.totalTrades} trades` : 'Too few trades to annualise'}
+              </span>
             </div>
-            <div className="rounded-lg bg-slate-950/80 p-3">
-              <span className="text-slate-400 block">Max Drawdown</span>
+            <div className="rounded-lg bg-black/45 p-3">
+              <span className="text-ink-2 block">Max Drawdown</span>
               <span className="text-lg font-bold text-rose-400">-{activeResult.maxDrawdownPct}%</span>
             </div>
-            <div className="rounded-lg bg-slate-950/80 p-3">
-              <span className="text-slate-400 block">Win Rate</span>
+            <div className="rounded-lg bg-black/45 p-3">
+              <span className="text-ink-2 block">Win Rate</span>
               <span className="text-lg font-bold text-white">{activeResult.winRatePct}%</span>
             </div>
           </div>
 
+          {/* Benchmark and annualised growth are only shown when they are real. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="rounded-lg border border-white/[0.08] bg-black/30 p-3">
+              <span className="text-ink-3 block">Annualised growth (CAGR)</span>
+              <span className="font-semibold text-ink">
+                {activeResult.cagrPct === null ? 'Not reported — sample too short' : `${activeResult.cagrPct}%`}
+              </span>
+            </div>
+            <div className="rounded-lg border border-white/[0.08] bg-black/30 p-3">
+              <span className="text-ink-3 block">NIFTY 50 benchmark / alpha</span>
+              <span className="font-semibold text-ink">
+                {activeResult.benchmarkReturnPct === null ? 'Not available — no index feed' : `${activeResult.benchmarkReturnPct}%`}
+              </span>
+            </div>
+            <div className="rounded-lg border border-white/[0.08] bg-black/30 p-3">
+              <span className="text-ink-3 block">Data used</span>
+              <span className="font-semibold text-ink">
+                {activeResult.dataQuality?.isSynthetic ? 'Synthetic demo candles' : activeResult.dataQuality?.providers?.join(', ') || 'Unknown'}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-[11px] leading-relaxed text-ink-3 rounded-lg border border-white/[0.07] bg-black/30 p-3">
+            {activeResult.dataQuality?.disclosure}
+            {activeResult.cagrPct === null && ' CAGR is withheld because the sample spans less than a year.'}
+            {activeResult.benchmarkReturnPct === null && ' Alpha is withheld because no index price series is stored in this build.'}
+          </p>
+
           <div>
-            <h4 className="text-xs font-bold text-slate-300 mb-2">Simulated Out-of-Sample Trades:</h4>
+            <h4 className="text-xs font-bold text-ink-2 mb-2">Simulated trades:</h4>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 font-sans">
+                  <tr className="border-b border-white/[0.08] text-ink-2 font-sans">
                     <th className="pb-1.5">Asset</th>
                     <th className="pb-1.5">Entry Date</th>
                     <th className="pb-1.5">Exit Date</th>
@@ -167,14 +207,14 @@ export default function BacktestingView() {
                     <th className="pb-1.5">Net P&L (₹)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/40">
+                <tbody className="divide-y divide-white/[0.04]">
                   {activeResult.trades.map((t: any, i: number) => (
-                    <tr key={i} className="hover:bg-slate-800/20">
+                    <tr key={i} className="hover:bg-white/[0.02]">
                       <td className="py-1.5 font-bold text-white">{t.symbol}</td>
-                      <td className="py-1.5 text-slate-400">{t.entryDate}</td>
-                      <td className="py-1.5 text-slate-400">{t.exitDate}</td>
-                      <td className="py-1.5 text-slate-300">₹{t.entryPrice}</td>
-                      <td className="py-1.5 text-slate-300">₹{t.exitPrice}</td>
+                      <td className="py-1.5 text-ink-2">{t.entryDate}</td>
+                      <td className="py-1.5 text-ink-2">{t.exitDate}</td>
+                      <td className="py-1.5 text-ink-2">₹{t.entryPrice}</td>
+                      <td className="py-1.5 text-ink-2">₹{t.exitPrice}</td>
                       <td className={`py-1.5 font-bold ${t.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {t.pnl >= 0 ? '+' : ''}₹{t.pnl} ({t.pnlPct}%)
                       </td>
@@ -188,21 +228,24 @@ export default function BacktestingView() {
       )}
 
       {/* Historical Backtest Runs */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
+      <div className="card p-5 space-y-3">
         <h3 className="text-sm font-bold text-white uppercase tracking-wider">Historical Backtest Runs</h3>
         <div className="space-y-2">
           {backtests.map((b) => (
-            <div key={b.id} className="rounded-lg border border-slate-800 bg-slate-950 p-3 flex items-center justify-between text-xs">
+            <div key={b.id} className="rounded-lg border border-white/[0.08] bg-black/30 p-3 flex items-center justify-between text-xs">
               <div>
                 <span className="font-bold text-white">{b.strategy_name}</span>
-                <span className="text-slate-400 ml-2">({b.version_tag})</span>
-                <span className="text-[11px] text-slate-500 block">{b.asset_universe}</span>
+                <span className="text-ink-2 ml-2">({b.version_tag})</span>
+                <span className="text-[11px] text-ink-3 block">{b.asset_universe}</span>
               </div>
               <div className="flex items-center gap-4 font-mono">
                 <div>Return: <strong className="text-emerald-400">+{b.total_return_pct}%</strong></div>
                 <div>Sharpe: <strong className="text-white">{b.sharpe_ratio}</strong></div>
                 <div>Drawdown: <strong className="text-rose-400">-{b.max_drawdown_pct}%</strong></div>
-                <div>Trades: <strong className="text-slate-300">{b.total_trades}</strong></div>
+                <div>Trades: <strong className="text-ink-2">{b.total_trades}</strong></div>
+                <div className="text-[10px] px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  {b.out_of_sample_tested === 1 ? 'Out-of-sample tested' : 'Not validated'}
+                </div>
               </div>
             </div>
           ))}

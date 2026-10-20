@@ -12,6 +12,32 @@ export interface EvaluateProposalRiskParams {
 
 export function evaluateProposalRisk(params: EvaluateProposalRiskParams): RiskCheckResult {
   const { portfolioId, assetId, side, quantity, price, bypassMarketHours = false } = params;
+  const invalidQuantity = !Number.isSafeInteger(quantity) || quantity <= 0;
+  const invalidPrice = !Number.isFinite(price) || price <= 0;
+  const invalidSide = side !== 'BUY' && side !== 'SELL';
+  if (invalidQuantity || invalidPrice || invalidSide) {
+    const reasons = [
+      ...(invalidQuantity ? ['Quantity must be a positive whole number of shares'] : []),
+      ...(invalidPrice ? ['Execution price must be finite and greater than zero'] : []),
+      ...(invalidSide ? ['Order side must be BUY or SELL'] : [])
+    ];
+    return {
+      passed: false,
+      reasons,
+      checks: [
+        {
+          ruleName: 'ORDER_INPUT_VALID',
+          passed: false,
+          currentValue: reasons.join('; '),
+          limitValue: 'positive integer quantity, positive finite price, BUY or SELL side',
+          description: 'Order inputs must be valid before risk calculations'
+        }
+      ],
+      calculatedPositionPct: 0,
+      calculatedExposureAfterPct: 0,
+      cashRemainingAfter: 0
+    };
+  }
   const orderValue = quantity * price;
 
   const reasons: string[] = [];

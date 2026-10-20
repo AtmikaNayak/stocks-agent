@@ -3,6 +3,8 @@ import marketData from '../market-data';
 import { calculateIndianCharges } from '../tax-calculator';
 import { evaluateProposalRisk } from '../risk-engine';
 import { Horizon } from '../types';
+import { describeFundamentalProvenance, describeQuoteProvenance, validateQuote } from '../data-provenance';
+import { requireEnum, requireNonEmptyString } from '../validation';
 
 export interface GenerateProposalInput {
   portfolioId: string;
@@ -17,7 +19,12 @@ export class InvestmentStrategistAgent {
   name = 'STRATEGIST';
 
   async evaluateAndPropose(input: GenerateProposalInput) {
-    const { portfolioId, assetId, action, horizon, strategyVersionId } = input;
+    // Fail closed on malformed input rather than inventing a plausible proposal.
+    const portfolioId = requireNonEmptyString(input?.portfolioId, 'portfolioId');
+    const assetId = requireNonEmptyString(input?.assetId, 'assetId');
+    const action = requireEnum(input?.action, 'action', ['BUY', 'SELL'] as const);
+    const horizon = requireEnum(input?.horizon, 'horizon', ['LONG_TERM', 'SHORT_TERM'] as const);
+    const strategyVersionId = input?.strategyVersionId;
 
     // 1. Fetch Asset & Market Data
     const asset = db.queryOne<{ id: string; symbol: string; name: string; sector: string }>(
@@ -29,7 +36,24 @@ export class InvestmentStrategistAgent {
     const quote = await marketData.getQuote(asset.symbol);
     if (!quote) throw new Error(`Could not obtain market quote for ${asset.symbol}`);
 
+    // Structural validation: a proposal must never be built on an unusable quote.
+    const quoteValidation = validateQuote(quote);
+    if (!quoteValidation.ok) {
+      throw new Error(
+        `Proposal rejected: the stored quote for ${asset.symbol} is not usable (${quoteValidation.reasons.join('; ')}).`
+      );
+    }
+    const quoteProvenance = describeQuoteProvenance({
+      freshness: quote.freshness,
+      provider: quote.provider
+    });
+    if (quoteProvenance.freshness === 'STALE') {
+      throw new Error(`Proposal rejected: the stored quote for ${asset.symbol} is stale. Refresh data first.`);
+    }
+
     const fund = await marketData.getFundamentals(asset.symbol);
+    const fundProvenance = fund ? describeFundamentalProvenance(fund.source) : null;
+    const fundamentalsVerified = Boolean(fundProvenance?.isVerified);
 
     // 2. Fetch Portfolio State
     const portfolio = db.queryOne<{
@@ -37,8 +61,19 @@ export class InvestmentStrategistAgent {
       type: 'REAL' | 'VIRTUAL';
       total_value: number;
       current_cash: number;
-    }>('SELECT id, type, total_value, current_cash FROM portfolios WHERE id = ?', [portfolioId]);
+      is_active: number;
+    }>('SELECT id, type, total_value, current_cash, is_active FROM portfolios WHERE id = ?', [portfolioId]);
     if (!portfolio) throw new Error(`Portfolio with id ${portfolioId} not found`);
+    if (!portfolio.is_active) throw new Error(`Portfolio ${portfolioId} is inactive.`);
+
+    // Proposals are suggestions inside a portfolio, but real-money automation is
+    // disabled in this build, so no proposal may target the real account.
+    if (portfolio.type !== 'VIRTUAL') {
+      throw new Error('Proposals are limited to the virtual practice portfolio: real-money execution is disabled in this build.');
+    }
+    if (!Number.isFinite(portfolio.total_value) || portfolio.total_value <= 0) {
+      throw new Error(`Portfolio ${portfolioId} has an invalid total value; cannot size a position.`);
+    }
 
     // Sizing calculation:
     // Target 8% to 12% allocation per position, bounded by available cash
@@ -58,7 +93,14 @@ export class InvestmentStrategistAgent {
       targetQuantity = heldPos ? heldPos.quantity : 1;
     }
 
+    if (!Number.isSafeInteger(targetQuantity) || targetQuantity <= 0) {
+      throw new Error(`Refusing to propose a non-positive quantity for ${asset.symbol}.`);
+    }
+
     const proposedValue = targetQuantity * quote.price;
+    if (!Number.isFinite(proposedValue) || proposedValue <= 0) {
+      throw new Error(`Refusing to propose an invalid order value for ${asset.symbol}.`);
+    }
     const charges = calculateIndianCharges({
       side: action,
       quantity: targetQuantity,
@@ -73,26 +115,55 @@ export class InvestmentStrategistAgent {
     let alternativesConsidered = '';
     let invalidationCriteria = '';
 
+    const metric = (value: number | null | undefined, suffix = '', name = 'value'): string => {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+        return `${name} is not available in this dataset`;
+      }
+      return `${name} ${Number(value)}${suffix}`;
+    };
+
+    const dataLevelDisclosure = quoteProvenance.isVerified
+      ? `Prices are verified ${quoteProvenance.freshness} data from ${quoteProvenance.provider}.`
+      : `Prices are simulated demo fixtures from ${quoteProvenance.provider ?? 'an unknown source'}; this proposal demonstrates mechanics only and is not actionable for real money.`;
+
+    const fundamentalsDisclosure = fundamentalsVerified
+      ? `Fundamentals come from ${fundProvenance?.provider}.`
+      : fund
+        ? `Fundamentals are illustrative demo fixtures (${fundProvenance?.provider}) and are not audited or exchange-verified.`
+        : 'No fundamentals are stored for this company in this dataset.';
+
+    // Suggestions describe what the stored data shows. They never assert that a
+    // trade should be made, and never invent a number that is missing.
     if (action === 'BUY') {
       if (horizon === 'LONG_TERM') {
-        rationale = `Proposing systematic allocation of ${targetQuantity} shares in ${asset.name} (${asset.symbol}) at ₹${quote.price}. High return on capital (${fund?.roce || 16}%) and strong balance sheet present a compounding opportunity with favorable risk-reward.`;
-        supportingEvidence = `Audited ROCE of ${fund?.roce || 16}%, Debt-to-Equity of ${fund?.debtToEquity || 0.2}, robust operating margin of ${fund?.operatingMargin || 18}%. Verified NSE data indicates steady institutional sponsorship.`;
-        contraryEvidence = `Valuation multiple of ${fund?.peRatio || 25}x P/E is near historical median. General equity market volatility could cause short-term mark-to-market drawdown.`;
-        alternativesConsidered = `Considered maintaining 100% virtual cash reserve in liquid risk-free equivalent, or allocating to broader index; selected ${asset.symbol} due to superior capital efficiency.`;
-        invalidationCriteria = `Thesis invalidates if quarterly operating margin declines by >250 bps, Debt-to-Equity rises above 1.0, or sustained break below 200-day moving average.`;
+        rationale = `Proposal to allocate ${targetQuantity} share${targetQuantity === 1 ? '' : 's'} of ${asset.name} (${asset.symbol}) at ₹${quote.price}, sized within the fixed single-position limit. ${dataLevelDisclosure}`;
+        supportingEvidence = [
+          fundamentalsVerified
+            ? `Reported profitability: ${metric(fund?.roce, '%', 'ROCE')}, ${metric(fund?.debtToEquity, '', 'Debt-to-Equity')}, ${metric(fund?.operatingMargin, '%', 'operating margin')}.`
+            : `${fundamentalsDisclosure}`,
+          `Price currently ₹${quote.price} (${quote.changePct >= 0 ? '+' : ''}${quote.changePct}% today) on ${quote.provider ?? 'unknown source'} data.`
+        ].join(' ');
+        contraryEvidence = [
+          fundamentalsVerified
+            ? `Valuation at ${metric(fund?.peRatio, 'x P/E')} leaves limited room if growth slows.`
+            : 'Without verified fundamentals, the case for owning this business cannot be assessed from the stored data.',
+          `General equity market volatility could produce a short-term mark-to-market drawdown, and simulated charges reduce any gain.`
+        ].join(' ');
+        alternativesConsidered = `Holding cash (which the 20% cash-reserve rule partly enforces) or skipping the idea entirely.`;
+        invalidationCriteria = `Revisit the idea if reported operating margin falls sharply, Debt-to-Equity rises above 1.0, or the price breaks well below its recent range.`;
       } else {
-        rationale = `Short-term momentum breakout in ${asset.symbol} with volume expansion (+${quote.changePct}% daily change). Targeting short swing capture over 5-10 trading sessions.`;
-        supportingEvidence = `Volume of ${quote.volume.toLocaleString('en-IN')} shares with price holding above VWAP pivot ₹${quote.vwap}.`;
-        contraryEvidence = `Intraday gap risk on unexpected global cues or sector consolidation.`;
-        alternativesConsidered = `Wait for lower pullback or trade index futures; direct equity chosen for defined downside and zero overnight leverage risk.`;
-        invalidationCriteria = `Immediate stop-loss triggered if price closes below 2.5% of entry price (₹${(quote.price * 0.975).toFixed(2)}).`;
+        rationale = `Short-term proposal for ${asset.symbol} after a ${quote.changePct >= 0 ? '+' : ''}${quote.changePct}% daily move. ${dataLevelDisclosure}`;
+        supportingEvidence = `Volume of ${quote.volume.toLocaleString('en-IN')} shares and price ₹${quote.price} on ${quote.provider ?? 'unknown source'} (${quote.freshness}) data.`;
+        contraryEvidence = `Gap risk on unexpected global cues or sector consolidation; short-term trading is where most beginners lose money.`;
+        alternativesConsidered = `Waiting for a calmer entry, or not trading at all.`;
+        invalidationCriteria = `Exit if price closes 2.5% below entry (₹${(quote.price * 0.975).toFixed(2)}).`;
       }
     } else {
-      rationale = `Proposing orderly exit of ${targetQuantity} shares in ${asset.symbol} at ₹${quote.price} to rebalance portfolio risk and realize gains.`;
-      supportingEvidence = `Target holding period or price objective achieved. Reallocating capital to higher-conviction opportunities.`;
-      contraryEvidence = `Potential upside continuation if current sector momentum accelerates further.`;
-      alternativesConsidered = `Considered partial profit booking; full exit chosen to preserve cash reserve.`;
-      invalidationCriteria = `N/A - Exit order.`;
+      rationale = `Proposal to exit ${targetQuantity} share${targetQuantity === 1 ? '' : 's'} of ${asset.symbol} at ₹${quote.price}, releasing cash back to the reserve. ${dataLevelDisclosure}`;
+      supportingEvidence = `Position size and the 20% cash-reserve rule determine how much can be released at the stored quote.`;
+      contraryEvidence = `Upside continuation if sector momentum accelerates after the exit.`;
+      alternativesConsidered = `Partial profit booking instead of a full exit.`;
+      invalidationCriteria = `Not applicable — this is an exit.`;
     }
 
     const proposalId = `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -121,7 +192,7 @@ export class InvestmentStrategistAgent {
       contraryEvidence,
       alternativesConsidered,
       invalidationCriteria,
-      'Market session open, price within 1% of proposed quote, deterministic risk checks passed.',
+      `Quote ${quote.freshness} from ${quote.provider ?? 'unknown source'}; market session open; deterministic risk checks must pass.`,
       charges.totalCharges,
       expiresAt
     ]);
@@ -184,6 +255,14 @@ export class InvestmentStrategistAgent {
     return {
       proposalId,
       assetSymbol: asset.symbol,
+      isActionable: quoteProvenance.isActionable && fundamentalsVerified,
+      dataProvenance: {
+        quoteFreshness: quoteProvenance.freshness,
+        quoteProvider: quoteProvenance.provider,
+        pricesVerified: quoteProvenance.isVerified,
+        fundamentalsVerified,
+        disclosure: `${dataLevelDisclosure} ${fundamentalsDisclosure}`
+      },
       action,
       horizon,
       proposedPrice: quote.price,

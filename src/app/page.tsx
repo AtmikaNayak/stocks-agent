@@ -6,6 +6,7 @@ import EmergencyStopModal from '@/components/EmergencyStopModal';
 import OrderModal from '@/components/OrderModal';
 import ProposalModal from '@/components/ProposalModal';
 import GlossaryModal from '@/components/GlossaryModal';
+import LoginView from '@/components/LoginView';
 
 // Views
 import DashboardView from '@/components/views/DashboardView';
@@ -34,6 +35,8 @@ export default function HomePage() {
   const [activePortfolioType, setActivePortfolioType] = useState<'REAL' | 'VIRTUAL'>('VIRTUAL');
   const [experienceMode, setExperienceMode] = useState<'BEGINNER' | 'ADVANCED'>('BEGINNER');
   const [emergencyStopEnabled, setEmergencyStopEnabled] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [researchSymbol, setResearchSymbol] = useState('RELIANCE');
 
   // Modals state
   const [isEmergencyStopOpen, setIsEmergencyStopOpen] = useState(false);
@@ -59,16 +62,31 @@ export default function HomePage() {
     currentTimeIST: '11:45 IST'
   });
   const [loading, setLoading] = useState(true);
+  const [sessionUser, setSessionUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  // Server-assigned: whether this session may run deployment-wide operations.
+  const [isOperator, setIsOperator] = useState(false);
 
   // Fetch all core data
   const loadData = async () => {
+    // Every endpoint below requires the session cookie; a 401 means the
+    // session expired or was revoked, so fall back to the sign-in screen.
+    const api = (url: string) =>
+      fetch(url).then((r) => {
+        if (r.status === 401) {
+          setSessionUser(null);
+          throw new Error('unauthenticated');
+        }
+        return r.json();
+      });
+
     try {
       const [portRes, mktRes, agentRes, propRes, setRes] = await Promise.all([
-        fetch('/api/portfolios').then((r) => r.json()),
-        fetch('/api/market').then((r) => r.json()),
-        fetch('/api/agents').then((r) => r.json()),
-        fetch('/api/proposals').then((r) => r.json()),
-        fetch('/api/settings').then((r) => r.json()),
+        api('/api/portfolios'),
+        api('/api/market'),
+        api('/api/agents'),
+        api('/api/proposals'),
+        api('/api/settings'),
       ]);
 
       setPortfolios(portRes.portfolios || []);
@@ -99,11 +117,50 @@ export default function HomePage() {
     }
   };
 
+  // Establish who the caller is before loading any portfolio data.
   useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/session')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (cancelled) return;
+        setSessionUser(payload?.user ?? null);
+        setIsOperator(Boolean(payload?.isOperator));
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSessionUser(null);
+        setIsOperator(false);
+        setAuthChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionUser) return;
     loadData();
     const interval = setInterval(loadData, 20000);
     return () => clearInterval(interval);
-  }, []);
+  }, [sessionUser]);
+
+  const handleSignOut = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Signing out of the UI must succeed even if the request fails.
+    }
+    setSessionUser(null);
+    setIsOperator(false);
+    setPortfolios([]);
+    setPositions([]);
+    setLedger([]);
+    setProposals([]);
+    setUserSettings(null);
+    setCurrentView('dashboard');
+  };
 
   const handleToggleEmergencyStop = async (enable: boolean, reason: string) => {
     const res = await fetch('/api/settings', {
@@ -123,20 +180,27 @@ export default function HomePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'update_mode', controlMode: mode })
     });
-    if (res.ok) loadData();
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({} as { error?: string }));
+      throw new Error(payload.error || 'That setting could not be saved.');
+    }
+    await loadData();
   };
 
   const handleToggleExperienceMode = async (mode: 'BEGINNER' | 'ADVANCED') => {
+    const previous = experienceMode;
     setExperienceMode(mode);
-    await fetch('/api/settings', {
+    const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'update_mode', experienceMode: mode })
     });
+    // Keep the interface honest: if the preference could not be saved, go back.
+    if (!res.ok) setExperienceMode(previous);
   };
 
   const currentPortfolio = portfolios.find((p) => p.type === activePortfolioType) || portfolios[0] || {
-    id: 'port_virt_01',
+    id: '',
     name: 'Virtual Wealth Builder',
     type: 'VIRTUAL',
     current_cash: 25000,
@@ -144,19 +208,40 @@ export default function HomePage() {
     invested_value: 0
   };
 
+  const virtualPortfolio = portfolios.find((p) => p.type === 'VIRTUAL');
+
+  // No session: only the sign-in screen is reachable.
+  if (!authChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#070a12] text-sm text-ink-2">
+        Checking your session…
+      </div>
+    );
+  }
+
+  if (!sessionUser) {
+    return <LoginView onSignedIn={(user) => setSessionUser(user)} />;
+  }
+
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950 font-sans text-slate-100">
-      {/* Sidebar Navigation */}
+    <div className="relative z-10 flex min-h-screen bg-transparent font-sans text-ink">
+      {/* Navigation */}
       <Sidebar
         currentView={currentView}
         onSelectView={(v) => setCurrentView(v)}
         activePortfolioType={activePortfolioType}
         experienceMode={experienceMode}
+        practiceValue={virtualPortfolio?.total_value}
+        mobileOpen={isMobileNavOpen}
+        onCloseMobile={() => setIsMobileNavOpen(false)}
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Navbar
+          userName={sessionUser.name}
+          onSignOut={handleSignOut}
+          onOpenMobileNav={() => setIsMobileNavOpen(true)}
           activePortfolioType={activePortfolioType}
           onTogglePortfolioType={(t) => setActivePortfolioType(t)}
           experienceMode={experienceMode}
@@ -173,7 +258,8 @@ export default function HomePage() {
         />
 
         {/* Dynamic View Body */}
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        <main className="mx-auto w-full max-w-[1220px] flex-1 px-4 py-5 sm:px-6 sm:py-6">
+          <div key={currentView} className="rise-in">
           {currentView === 'dashboard' && (
             <DashboardView
               data={{
@@ -192,6 +278,10 @@ export default function HomePage() {
               }}
               onOpenProposalModal={() => setIsProposalModalOpen(true)}
               experienceMode={experienceMode}
+              onSelectAsset={(symbol: string) => {
+                setResearchSymbol(symbol);
+                setCurrentView('research');
+              }}
             />
           )}
 
@@ -231,6 +321,7 @@ export default function HomePage() {
               quotes={quotes}
               session={marketSession}
               onSelectAsset={(sym) => {
+                setResearchSymbol(sym);
                 setCurrentView('research');
               }}
               onOpenOrderModal={(asset) => {
@@ -242,7 +333,8 @@ export default function HomePage() {
 
           {currentView === 'research' && (
             <ResearchView
-              initialSymbol="RELIANCE"
+              key={researchSymbol}
+              initialSymbol={researchSymbol}
               onOpenOrderModal={(asset) => {
                 setSelectedAssetForOrder(asset);
                 setIsOrderModalOpen(true);
@@ -263,6 +355,7 @@ export default function HomePage() {
 
           {currentView === 'agents' && (
             <AgentsView
+              canOperate={isOperator}
               agentsData={{ runs, observations, theses }}
               onRefresh={loadData}
               onOpenProposalModal={() => setIsProposalModalOpen(true)}
@@ -331,8 +424,16 @@ export default function HomePage() {
           )}
 
           {currentView === 'system-health' && (
-            <SystemHealthView />
+            <SystemHealthView canOperate={isOperator} />
           )}
+          </div>
+
+          {/* Persistent, honest footer */}
+          <footer className="mt-10 border-t border-white/[0.06] pt-4 pb-2 text-[11px] leading-relaxed text-ink-3/80">
+            InvestPilot is a learning and simulation tool. Prices, fundamentals and news in this build are
+            demo fixtures, not live exchange data. Nothing here is investment advice, and real-money
+            trading is intentionally switched off.
+          </footer>
         </main>
       </div>
 

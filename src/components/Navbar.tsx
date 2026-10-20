@@ -5,12 +5,17 @@ import {
   HelpCircle,
   PlusCircle,
   Sparkles,
-  Clock,
-  CheckCircle2,
-  AlertTriangle
+  Menu,
+  Lock,
+  Info,
+  LogOut,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui';
 
 interface Props {
+  userName?: string;
+  onSignOut?: () => void;
   activePortfolioType: 'REAL' | 'VIRTUAL';
   onTogglePortfolioType: (type: 'REAL' | 'VIRTUAL') => void;
   experienceMode: 'BEGINNER' | 'ADVANCED';
@@ -20,6 +25,7 @@ interface Props {
   onOpenOrderModal: () => void;
   onOpenProposalModal: () => void;
   onOpenGlossaryModal: () => void;
+  onOpenMobileNav?: () => void;
   marketSession: {
     isOpen: boolean;
     session: string;
@@ -28,6 +34,8 @@ interface Props {
 }
 
 export default function Navbar({
+  userName,
+  onSignOut,
   activePortfolioType,
   onTogglePortfolioType,
   experienceMode,
@@ -37,146 +45,160 @@ export default function Navbar({
   onOpenOrderModal,
   onOpenProposalModal,
   onOpenGlossaryModal,
-  marketSession
+  onOpenMobileNav,
+  marketSession,
 }: Props) {
+  const isPractice = activePortfolioType === 'VIRTUAL';
+
   return (
-    <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
-      {/* High-visibility Environment Warning Banner for Real Demat */}
-      {activePortfolioType === 'REAL' ? (
-        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-200">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
-            <span>
-              <strong>REAL-MONEY ENVIRONMENT ACTIVE:</strong> Orders submitted here route to your official Demat broker. Real capital is at risk. Automated execution requires explicit multi-factor authorization.
-            </span>
-          </div>
-          <span className="font-mono text-[11px] bg-amber-500/20 px-2 py-0.5 rounded text-amber-300 font-semibold">
-            STRICT ISOLATION
+    <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#070a12]/85 backdrop-blur-xl">
+      {/*
+        One honest status line. The previous build claimed "verified NSE market data",
+        which is not true — every price here comes from seeded demo fixtures.
+      */}
+      {isPractice ? (
+        <div className="flex items-center justify-center gap-2 border-b border-white/[0.05] bg-white/[0.025] px-4 py-1.5 text-center text-[11px] text-ink-3">
+          <Info className="h-3.5 w-3.5 shrink-0 text-[#8fb0ff]" />
+          <span>
+            <span className="font-semibold text-[#bcd0ff]">Practice mode.</span>{' '}
+            <span className="hidden sm:inline">Simulated money and demo prices — no real orders can be placed.</span>
+            <span className="sm:hidden">Simulated money, demo prices.</span>
           </span>
         </div>
       ) : (
-        <div className="bg-blue-500/10 border-b border-blue-500/20 px-4 py-1 flex items-center justify-between text-[11px] text-blue-300">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-            <span>
-              <strong>VIRTUAL SANDBOX ACTIVE:</strong> Initial capital ₹25,000. Uses verified NSE market data and statutory Indian charges simulation.
+        <div className="flex items-center justify-center gap-2 border-b border-[rgba(240,183,117,0.22)] bg-[rgba(240,183,117,0.08)] px-4 py-1.5 text-center text-[11px] text-[#f2d5b3]">
+          <Lock className="h-3.5 w-3.5 shrink-0 text-[#f0b775]" />
+          <span>
+            <span className="font-semibold">Real account — read-only.</span>{' '}
+            <span className="hidden sm:inline">
+              No broker is connected in this build, so figures are stored records and ordering is disabled.
             </span>
-          </div>
-          <span className="text-[10px] text-blue-400">Zero Real Capital Risk</span>
+            <span className="sm:hidden">Broker connection and ordering are disabled.</span>
+          </span>
         </div>
       )}
 
-      <div className="px-6 py-2.5 flex items-center justify-between gap-4">
-        {/* Left: Environment Switcher Tabs */}
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-slate-700 bg-slate-950 p-1 text-xs font-semibold">
+      <div className="flex items-center justify-between gap-3 px-3 py-2.5 sm:px-5">
+        {/* Left: which purse am I looking at? */}
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            onClick={onOpenMobileNav}
+            className="rounded-lg border border-white/[0.08] p-2 text-ink-2 hover:bg-white/[0.06] hover:text-ink lg:hidden"
+            aria-label="Open navigation"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+
+          <div className="segmented" role="tablist" aria-label="Choose account">
             <button
+              role="tab"
+              aria-selected={isPractice}
+              data-active={isPractice}
               onClick={() => onTogglePortfolioType('VIRTUAL')}
-              className={`px-3 py-1 rounded transition ${
-                activePortfolioType === 'VIRTUAL'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              className="segmented-item"
             >
-              Virtual Simulator (₹25k)
+              <span className="sm:hidden">Practice</span>
+              <span className="hidden sm:inline">Practice money</span>
             </button>
             <button
+              role="tab"
+              aria-selected={!isPractice}
+              data-active={!isPractice}
               onClick={() => onTogglePortfolioType('REAL')}
-              className={`px-3 py-1 rounded transition ${
-                activePortfolioType === 'REAL'
-                  ? 'bg-amber-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              className="segmented-item"
             >
-              Real Demat Account
+              <span className="sm:hidden">Real</span>
+              <span className="hidden sm:inline">Real account</span>
             </button>
           </div>
 
-          {/* NSE Market Hours indicator */}
-          <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400 border border-slate-800 rounded-lg px-2.5 py-1 bg-slate-950/60">
-            <Clock className="h-3.5 w-3.5 text-slate-400" />
-            <span className="font-mono text-[11px] text-slate-300">{marketSession.currentTimeIST}</span>
+          <div className="hidden items-center gap-2 rounded-xl border border-white/[0.07] bg-black/20 px-2.5 py-1.5 text-[11px] text-ink-3 xl:flex">
             <span
-              className={`h-2 w-2 rounded-full ml-1 ${
-                marketSession.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
-              }`}
+              className={cn(
+                'h-1.5 w-1.5 rounded-full',
+                marketSession.isOpen ? 'bg-emerald-400' : 'bg-rose-400'
+              )}
             />
-            <span className="text-[11px] font-medium text-slate-300">
-              NSE {marketSession.session}
-            </span>
+            <span className="text-ink-2">NSE {marketSession.session.replace('_', ' ').toLowerCase()}</span>
+            <span className="text-ink-3/60">·</span>
+            <span className="num">{marketSession.currentTimeIST}</span>
           </div>
         </div>
 
-        {/* Right Controls */}
-        <div className="flex items-center gap-2.5">
-          {/* Beginner vs Advanced Mode Toggle */}
-          <div className="flex rounded-lg border border-slate-700 bg-slate-950 p-0.5 text-xs font-medium">
+        {/* Right: actions, ordered by how often a beginner needs them */}
+        <div className="flex items-center gap-2">
+          <div className="segmented hidden sm:inline-flex" aria-label="Detail level">
             <button
+              data-active={experienceMode === 'BEGINNER'}
               onClick={() => onToggleExperienceMode('BEGINNER')}
-              className={`px-2.5 py-1 rounded transition text-xs ${
-                experienceMode === 'BEGINNER'
-                  ? 'bg-indigo-600 text-white font-semibold shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              className="segmented-item"
+              title="Plain language and guided steps"
             >
-              Beginner
+              Simple
             </button>
             <button
+              data-active={experienceMode === 'ADVANCED'}
               onClick={() => onToggleExperienceMode('ADVANCED')}
-              className={`px-2.5 py-1 rounded transition text-xs ${
-                experienceMode === 'ADVANCED'
-                  ? 'bg-slate-700 text-white font-semibold shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              className="segmented-item"
+              title="Show advanced metrics and tools"
             >
-              Advanced
+              Detailed
             </button>
           </div>
 
-          {/* Glossary Modal Button for Beginners */}
-          {experienceMode === 'BEGINNER' && (
+          <button
+            onClick={onOpenGlossaryModal}
+            className="rounded-xl border border-white/[0.08] p-2 text-ink-2 transition-colors hover:bg-white/[0.06] hover:text-ink"
+            title="Plain-English glossary"
+            aria-label="Open plain-English glossary"
+          >
+            <HelpCircle className="h-[17px] w-[17px]" />
+          </button>
+
+          <Button
+            variant="ai"
+            size="md"
+            className="hidden md:inline-flex"
+            icon={<Sparkles className="h-3.5 w-3.5" />}
+            onClick={onOpenProposalModal}
+          >
+            Get an AI idea
+          </Button>
+
+          <Button
+            variant="primary"
+            size="md"
+            icon={<PlusCircle className="h-4 w-4" />}
+            onClick={onOpenOrderModal}
+          >
+            <span className="hidden sm:inline">Practise a trade</span>
+            <span className="sm:hidden">Trade</span>
+          </Button>
+
+          {onSignOut && (
             <button
-              onClick={onOpenGlossaryModal}
-              className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition"
-              title="Financial Terms Glossary"
+              onClick={onSignOut}
+              className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] px-2.5 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:bg-white/[0.06] hover:text-ink"
+              title={userName ? `Signed in as ${userName} — sign out` : 'Sign out'}
+              aria-label="Sign out"
             >
-              <HelpCircle className="h-3.5 w-3.5 text-blue-400" />
-              <span className="hidden sm:inline">Glossary</span>
+              <LogOut className="h-[17px] w-[17px]" />
+              <span className="hidden xl:inline">Sign out</span>
             </button>
           )}
 
-          {/* Ask AI Copilot */}
-          <button
-            onClick={onOpenProposalModal}
-            className="flex items-center gap-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">AI Proposal</span>
-          </button>
-
-          {/* Place Order */}
-          <button
-            onClick={onOpenOrderModal}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition"
-          >
-            <PlusCircle className="h-3.5 w-3.5" />
-            <span>New Order</span>
-          </button>
-
-          {/* Emergency Stop Kill Switch Button */}
           <button
             onClick={onOpenEmergencyStop}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition shadow ${
+            className={cn(
+              'flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[12px] font-semibold transition-colors',
               emergencyStopEnabled
-                ? 'bg-red-600 text-white animate-pulse'
-                : 'border border-red-500/40 bg-red-950/40 text-red-300 hover:bg-red-900/60'
-            }`}
-            title="Emergency Stop Kill Switch"
+                ? 'border-rose-400/50 bg-rose-500/25 text-rose-100'
+                : 'border-rose-400/20 bg-rose-500/[0.07] text-rose-300 hover:bg-rose-500/15'
+            )}
+            title="Emergency stop — pause all automated activity"
           >
-            <ShieldAlert className="h-3.5 w-3.5 text-red-400" />
-            <span className="hidden md:inline">
-              {emergencyStopEnabled ? 'HALTED' : 'KILL SWITCH'}
-            </span>
+            <ShieldAlert className="h-[17px] w-[17px]" />
+            <span className="hidden lg:inline">{emergencyStopEnabled ? 'Halted' : 'Stop all'}</span>
           </button>
         </div>
       </div>

@@ -4,11 +4,14 @@ import investmentStrategistAgent from '../src/lib/agents/strategist';
 import explainabilityAgent from '../src/lib/agents/explainability';
 
 describe('Four AI Agents Coordination', () => {
-  it('Market Intelligence Agent scans quotes and extracts verified observations', async () => {
+  it('Market Intelligence Agent scans quotes and extracts clearly-labelled observations', async () => {
     const scan = await marketIntelligenceAgent.runScan('MANUAL');
     expect(scan.runId).toBeDefined();
     expect(scan.observations.length).toBeGreaterThan(0);
     expect(scan.observations.some(o => o.observationType === 'VALUATION_DISCOUNT')).toBe(true);
+    // Demo fixtures must never be presented as verified or actionable.
+    expect(scan.dataQuality.allSynthetic).toBe(true);
+    expect(scan.observations.every(o => o.isActionable === false)).toBe(true);
   });
 
   it('Investment Strategist Agent formulates structured proposal with evidence and criteria', async () => {

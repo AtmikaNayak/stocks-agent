@@ -16,32 +16,38 @@ export class BackgroundWorkerScheduler {
         statusMessage = `Session: ${session.session}. ${session.message}`;
       } else if (jobName === 'portfolio_valuation_worker') {
         // Re-evaluate MTM for all open positions across portfolios
-        const positions = db.query<{ id: string; portfolio_id: string; symbol: string; quantity: number; average_buy_price: number }>(`
-          SELECT p.id, p.portfolio_id, a.symbol, p.quantity, p.average_buy_price
+        const positions = db.query<{ id: string; portfolio_id: string; portfolio_type: 'REAL' | 'VIRTUAL'; symbol: string; quantity: number; average_buy_price: number }>(`
+          SELECT p.id, p.portfolio_id, pf.type AS portfolio_type, a.symbol, p.quantity, p.average_buy_price
           FROM positions p
           JOIN assets a ON p.asset_id = a.id
+          JOIN portfolios pf ON pf.id = p.portfolio_id
         `);
 
+        let updatedPositions = 0;
         for (const pos of positions) {
+          // A real portfolio must be valued from an authenticated broker/market feed.
+          // This build has no such adapter; never rewrite real holdings using demo data.
+          if (pos.portfolio_type === 'REAL') continue;
           const quote = await marketData.getQuote(pos.symbol);
-          if (quote) {
-            const mktVal = Math.round(pos.quantity * quote.price * 100) / 100;
-            const cost = pos.quantity * pos.average_buy_price;
-            const unrealised = Math.round((mktVal - cost) * 100) / 100;
-            const unrealisedPct = Math.round((unrealised / cost) * 10000) / 100;
+          if (!quote || quote.freshness === 'STALE') continue;
 
-            db.execute(`
-              UPDATE positions SET
-                current_price = ?,
-                current_market_value = ?,
-                unrealised_pnl = ?,
-                unrealised_pnl_pct = ?,
-                last_updated_at = datetime('now')
-              WHERE id = ?
-            `, [quote.price, mktVal, unrealised, unrealisedPct, pos.id]);
-          }
+          const mktVal = Math.round(pos.quantity * quote.price * 100) / 100;
+          const cost = pos.quantity * pos.average_buy_price;
+          const unrealised = Math.round((mktVal - cost) * 100) / 100;
+          const unrealisedPct = Math.round((unrealised / cost) * 10000) / 100;
+
+          db.execute(`
+            UPDATE positions SET
+              current_price = ?,
+              current_market_value = ?,
+              unrealised_pnl = ?,
+              unrealised_pnl_pct = ?,
+              last_updated_at = datetime('now')
+            WHERE id = ?
+          `, [quote.price, mktVal, unrealised, unrealisedPct, pos.id]);
+          updatedPositions += 1;
         }
-        statusMessage = `Re-evaluated ${positions.length} active positions.`;
+        statusMessage = `Re-evaluated ${updatedPositions} virtual positions; real portfolios skipped because broker valuation is not implemented.`;
       } else if (jobName === 'risk_safeguard_checks') {
         // Check portfolios for drawdown limits or loss breaches
         const portfolios = db.query<{ id: string; user_id: string; total_value: number; initial_capital: number; current_cash: number }>(
@@ -61,42 +67,57 @@ export class BackgroundWorkerScheduler {
           }
         }
       } else if (jobName === 'strategist_thesis_review') {
-        const theses = db.query<{ id: string; asset_id: string; stop_loss_price: number; target_price: number }>(
-          "SELECT * FROM investment_theses WHERE status = 'ACTIVE'"
-        );
+        // Thesis updates are simulated from local market data; never apply them to REAL accounts.
+        const theses = db.query<{ id: string; asset_id: string; stop_loss_price: number; target_price: number }>(`
+          SELECT th.id, th.asset_id, th.stop_loss_price, th.target_price
+          FROM investment_theses th
+          JOIN portfolios pf ON pf.id = th.portfolio_id
+          WHERE th.status = 'ACTIVE' AND pf.type = 'VIRTUAL'
+        `);
         for (const th of theses) {
-          const quote = db.queryOne<{ close: number }>('SELECT close FROM market_data_points WHERE asset_id = ? ORDER BY timestamp DESC LIMIT 1', [th.asset_id]);
-          if (quote) {
-            if (th.stop_loss_price && quote.close <= th.stop_loss_price) {
-              db.execute("UPDATE investment_theses SET status = 'INVALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
-              db.execute(`
-                INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
-                VALUES (?, ?, datetime('now'), 'INVALIDATED', ?)
-              `, [`rev_${Date.now()}`, th.id, `Stop loss breached at close ₹${quote.close}.`]);
-            } else if (th.target_price && quote.close >= th.target_price) {
-              db.execute("UPDATE investment_theses SET status = 'VALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
-              db.execute(`
-                INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
-                VALUES (?, ?, datetime('now'), 'VALIDATED', ?)
-              `, [`rev_${Date.now()}`, th.id, `Target price achieved at close ₹${quote.close}.`]);
-            }
+          const quote = db.queryOne<{ close: number; freshness_status: string; provider: string }>(
+            'SELECT close, freshness_status, provider FROM market_data_points WHERE asset_id = ? ORDER BY timestamp DESC LIMIT 1',
+            [th.asset_id]
+          );
+          if (!quote || !Number.isFinite(quote.close) || quote.close <= 0 ||
+              quote.freshness_status === 'STALE' || quote.freshness_status === 'VERIFIED') {
+            continue;
+          }
+          if (th.stop_loss_price && quote.close <= th.stop_loss_price) {
+            db.execute("UPDATE investment_theses SET status = 'INVALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
+            db.execute(`
+              INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
+              VALUES (?, ?, datetime('now'), 'INVALIDATED', ?)
+            `, [`rev_${Date.now()}`, th.id, `Demo-data close ₹${quote.close}; verify against a real data source before acting.`]);
+          } else if (th.target_price && quote.close >= th.target_price) {
+            db.execute("UPDATE investment_theses SET status = 'VALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
+            db.execute(`
+              INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
+              VALUES (?, ?, datetime('now'), 'VALIDATED', ?)
+            `, [`rev_${Date.now()}`, th.id, `Demo-data close ₹${quote.close}; verify against a real data source before acting.`]);
           }
         }
-        statusMessage = `Reviewed ${theses.length} active theses.`;
+        statusMessage = `Reviewed ${theses.length} virtual theses using local demo data; REAL theses are skipped.`;
       } else if (jobName === 'order_reconciliation_engine') {
         // Reconcile cash ledger entries with portfolio current_cash
-        const ports = db.query<{ id: string; current_cash: number }>('SELECT id, current_cash FROM portfolios');
+        const ports = db.query<{ id: string; type: 'REAL' | 'VIRTUAL'; current_cash: number }>(
+          'SELECT id, type, current_cash FROM portfolios'
+        );
+        let reconciled = 0;
         for (const port of ports) {
+          // Real cash reconciliation requires broker-confirmed balances and fills;
+          // local ledger totals alone are not authoritative for a Demat account.
+          if (port.type === 'REAL') continue;
           const sumRow = db.queryOne<{ total_ledger: number }>(
             'SELECT COALESCE(SUM(amount), 0) as total_ledger FROM cash_ledger_entries WHERE portfolio_id = ?',
             [port.id]
           );
           if (sumRow && Math.abs(sumRow.total_ledger - port.current_cash) > 0.01) {
-            // Reconciled discrepancy
             db.execute("UPDATE portfolios SET current_cash = ?, updated_at = datetime('now') WHERE id = ?", [sumRow.total_ledger, port.id]);
+            reconciled += 1;
           }
         }
-        statusMessage = 'Reconciled cash ledgers across all portfolios.';
+        statusMessage = `Virtual ledger reconciliation complete. ${reconciled} virtual cash discrepancy/discrepancies corrected; real accounts skipped until broker reconciliation exists.`;
       }
 
       // Update scheduled_jobs record

@@ -24,32 +24,27 @@ export default function RealPortfolioView({
   onSelectView,
   onOpenOrderModal
 }: Props) {
-  const isConnected = portfolio?.broker_status === 'CONNECTED';
+  // A database flag is not proof of a verified external broker session.
+  const isConnected = false;
   const realPositions = positions.filter((p) => p.portfolio_type === 'REAL');
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <Briefcase className="h-6 w-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-white">Environment A: Real-Money Demat Portfolio</h1>
-              <span
-                className={`text-[10px] px-2 py-0.5 rounded font-mono font-semibold border ${
-                  isConnected
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                }`}
-              >
-                {isConnected ? 'LIVE BROKER LINKED' : 'DISCONNECTED'}
+              <h1 className="text-lg font-bold text-white">Real account (read-only)</h1>
+              <span className="text-[10px] px-2 py-0.5 rounded font-mono font-semibold border bg-rose-500/20 text-rose-300 border-rose-500/30">
+                REAL TRADING OFF
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              Direct execution gateway via authorized Indian brokers (Zerodha Kite Connect, Angel One SmartAPI, Upstox).
+            <p className="text-xs text-ink-2">
+              Read-only. No broker is connected, so the balances below are stored records rather than a broker-confirmed snapshot.
             </p>
           </div>
         </div>
@@ -57,20 +52,18 @@ export default function RealPortfolioView({
         <div className="flex items-center gap-2">
           <button
             onClick={() => onSelectView('broker')}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 transition"
+            className="flex items-center gap-1.5 rounded-lg border border-white/[0.12] bg-white/[0.06] hover:bg-white/[0.10] px-3 py-2 text-xs font-semibold text-ink transition"
           >
             <Plug className="h-3.5 w-3.5" />
-            <span>Manage Broker API</span>
+            <span>Broker connection</span>
           </button>
-          {isConnected && (
-            <button
-              onClick={onOpenOrderModal}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-white shadow transition"
-            >
-              <span>Live Order Ticket</span>
-            </button>
-          )}
+
         </div>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-xs text-amber-100">
+        <strong className="text-amber-200">Read-only records:</strong> broker login, order placement and balance reconciliation are not implemented.
+        Any balances or holdings below are local database records and are not confirmed by a broker. All real-money orders are blocked.
       </div>
 
       {/* If Broker Disconnected: Honest Setup State */}
@@ -80,9 +73,9 @@ export default function RealPortfolioView({
             <Lock className="h-7 w-7" />
           </div>
           <div className="max-w-md mx-auto space-y-2">
-            <h2 className="text-base font-bold text-white">Live Broker API Integration Inactive</h2>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              In strict accordance with SEBI guidelines and regulatory risk controls, live real-money trading is disabled by default. No real funds can be moved without explicit multi-factor broker authentication.
+            <h2 className="text-base font-bold text-white">No broker connected</h2>
+            <p className="text-xs text-ink-2 leading-relaxed">
+              This build has no broker login or order routing, so this screen cannot place a real order. Use the practice portfolio to try the same steps safely.
             </p>
           </div>
 
@@ -91,89 +84,89 @@ export default function RealPortfolioView({
               onClick={() => onSelectView('broker')}
               className="flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 px-5 py-2 text-xs font-semibold text-white shadow transition"
             >
-              <span>Connect Broker (Zerodha / Angel One)</span> <ArrowRight className="h-4 w-4" />
+              <span>See broker status</span> <ArrowRight className="h-4 w-4" />
             </button>
             <button
               onClick={() => onSelectView('virtual-portfolio')}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-medium text-slate-300 hover:text-white"
+              className="rounded-lg border border-white/[0.12] bg-white/[0.06] px-4 py-2 text-xs font-medium text-ink-2 hover:text-white"
             >
-              Switch to Virtual Simulator (₹25,000)
+              Open practice portfolio
             </button>
           </div>
         </div>
       ) : (
-        /* When Connected: Show Live Demat Metrics & Positions */
+        /* Stored ledger metrics and positions */
         <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <span className="text-xs text-slate-400 block mb-1">Live Demat Portfolio Value</span>
+            <div className="card p-4">
+              <span className="text-xs text-ink-2 block mb-1">Stored account value</span>
               <span className="text-xl font-bold text-white font-mono">
                 ₹{portfolio?.total_value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
               </span>
               <span className="text-[11px] text-emerald-400 block mt-1 font-semibold">
-                Verified Broker Margin
+                Not broker-synced
               </span>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <span className="text-xs text-slate-400 block mb-1">Available Trading Margin</span>
-              <span className="text-xl font-bold text-slate-200 font-mono">
+            <div className="card p-4">
+              <span className="text-xs text-ink-2 block mb-1">Stored cash balance</span>
+              <span className="text-xl font-bold text-ink font-mono">
                 ₹{portfolio?.current_cash.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
               </span>
-              <span className="text-[11px] text-slate-500 block mt-1">
-                Synchronized with broker
+              <span className="text-[11px] text-ink-3 block mt-1">
+                No broker connection in this build
               </span>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <span className="text-xs text-slate-400 block mb-1">Invested Demat Holdings</span>
-              <span className="text-xl font-bold text-slate-300 font-mono">
+            <div className="card p-4">
+              <span className="text-xs text-ink-2 block mb-1">Stored holdings value</span>
+              <span className="text-xl font-bold text-ink-2 font-mono">
                 ₹{portfolio?.invested_value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
               </span>
-              <span className="text-[11px] text-slate-500 block mt-1">
+              <span className="text-[11px] text-ink-3 block mt-1">
                 CNC Delivery Holdings
               </span>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <span className="text-xs text-slate-400 block mb-1">Autonomous Execution</span>
+            <div className="card p-4">
+              <span className="text-xs text-ink-2 block mb-1">Autonomous Execution</span>
               <span className="text-xs font-bold text-amber-400 block mt-2">
                 SUPERVISED ONLY
               </span>
-              <span className="text-[10px] text-slate-500 block">
+              <span className="text-[10px] text-ink-3 block">
                 Orders require approval
               </span>
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+          <div className="card p-5">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">
-              Verified Demat Holdings
+              Stored holdings (not broker-synced)
             </h3>
             {realPositions.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">
-                No active holdings reported in connected broker account.
+              <p className="text-xs text-ink-2 py-6 text-center">
+                No holdings recorded in the stored real-account ledger.
               </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs font-mono">
                   <thead>
-                    <tr className="border-b border-slate-800 text-slate-400">
-                      <th className="pb-2">Symbol</th>
-                      <th className="pb-2">Qty</th>
-                      <th className="pb-2">Avg Buy Price</th>
-                      <th className="pb-2">Current Quote</th>
-                      <th className="pb-2">Market Value</th>
+                    <tr className="border-b border-white/[0.08] text-ink-2">
+                      <th className="pb-2">Company</th>
+                      <th className="pb-2">Shares</th>
+                      <th className="pb-2">Avg. price</th>
+                      <th className="pb-2">Price now</th>
+                      <th className="pb-2">Value</th>
                     </tr>
                   </thead>
                   <tbody>
                     {realPositions.map((pos) => (
-                      <tr key={pos.id} className="border-b border-slate-800/40">
+                      <tr key={pos.id} className="border-b border-white/[0.05]">
                         <td className="py-2.5 font-bold text-white">{pos.symbol}</td>
-                        <td className="py-2.5 text-slate-200">{pos.quantity}</td>
-                        <td className="py-2.5 text-slate-300">₹{pos.average_buy_price.toFixed(2)}</td>
+                        <td className="py-2.5 text-ink">{pos.quantity}</td>
+                        <td className="py-2.5 text-ink-2">₹{pos.average_buy_price.toFixed(2)}</td>
                         <td className="py-2.5 text-white">₹{pos.current_price.toFixed(2)}</td>
-                        <td className="py-2.5 text-slate-200">₹{pos.current_market_value.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 text-ink">₹{pos.current_market_value.toLocaleString('en-IN')}</td>
                       </tr>
                     ))}
                   </tbody>

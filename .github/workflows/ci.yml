@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [investpilot-ai-2.0-fixes]
+  pull_request:
+    branches: [arena/703c77fd-stocks-agent]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Build production app
+        run: npm run build

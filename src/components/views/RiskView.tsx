@@ -1,13 +1,7 @@
 'use client';
 import React from 'react';
-import {
-  Shield,
-  ShieldCheck,
-  AlertTriangle,
-  Lock,
-  CheckCircle,
-  Sliders
-} from 'lucide-react';
+import { AlertTriangle, PauseCircle, ShieldCheck, Sliders, Wallet, PieChart, Target } from 'lucide-react';
+import { Button, Card, CardHeader, Notice, PageHeader, Progress } from '@/components/ui';
 
 interface Props {
   portfolio: any;
@@ -16,175 +10,149 @@ interface Props {
   onOpenEmergencyStop: () => void;
 }
 
-export default function RiskView({
-  portfolio,
-  permissions,
-  onSelectView,
-  onOpenEmergencyStop
-}: Props) {
+const RULES = [
+  {
+    title: 'Daily loss limit',
+    detail: 'New orders pause for the day once you are down this much.',
+    value: '₹1,500',
+  },
+  {
+    title: 'Worst-case drawdown',
+    detail: 'If the portfolio falls this far from its high point, trading stops.',
+    value: '10%',
+  },
+  {
+    title: 'Biggest single order',
+    detail: 'A single order above this amount is rejected as a typo risk.',
+    value: '₹10,000',
+  },
+  {
+    title: 'Orders per day',
+    detail: 'A cap that prevents runaway automated trading loops.',
+    value: '10 orders',
+  },
+  {
+    title: 'Trading hours',
+    detail: 'Practice orders follow the NSE session. Real trading is off entirely.',
+    value: '09:20–15:15 IST',
+  },
+  {
+    title: 'Real-money lock',
+    detail: 'A server-side check blocks any real order — there is no broker adapter.',
+    value: 'On',
+  },
+];
+
+export default function RiskView({ portfolio, permissions, onSelectView, onOpenEmergencyStop }: Props) {
   const totalValue = portfolio?.total_value || 25000;
   const cashReservePct = totalValue > 0 ? ((portfolio?.current_cash || 0) / totalValue) * 100 : 100;
   const exposurePct = totalValue > 0 ? ((portfolio?.invested_value || 0) / totalValue) * 100 : 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-red-500/20 text-red-400">
-            <Shield className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-white">Deterministic Risk Management Engine</h1>
-            <p className="text-xs text-slate-400">
-              Mathematical invariants enforced independently of LLMs. Rejects any unsafe order automatically.
-            </p>
-          </div>
-        </div>
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Guardrails"
+        title="Safety & limits"
+        subtitle="Fixed rules that apply to every order — yours or the AI’s. They are plain arithmetic, so they cannot be talked around."
+        icon={<ShieldCheck className="h-5 w-5" />}
+        actions={
+          <Button variant="danger" icon={<PauseCircle className="h-4 w-4" />} onClick={onOpenEmergencyStop}>
+            Pause everything
+          </Button>
+        }
+      />
 
-        <button
-          onClick={onOpenEmergencyStop}
-          className="rounded-lg border border-red-500/40 bg-red-950/40 px-3.5 py-2 text-xs font-bold text-red-300 hover:bg-red-900/60 shadow transition"
-        >
-          Emergency Kill Switch
-        </button>
+      <Notice tone="success" title="These rules are not suggestions">
+        The risk engine is separate from the AI. A suggestion that breaks any limit below is rejected before it can
+        become an order, and the reason is written into your decision journal.
+      </Notice>
+
+      {/* Three live gauges */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <Card className="p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2 text-[12.5px] font-semibold text-ink">
+              <Wallet className="h-4 w-4 text-brand" />
+              Cash you always keep
+            </div>
+            <span className="num text-[11px] font-semibold text-ink-3">target ≥ 20%</span>
+          </div>
+          <p className="num mt-2 text-[28px] font-semibold leading-none text-ink">{cashReservePct.toFixed(1)}%</p>
+          <Progress className="mt-3" value={cashReservePct} tone={cashReservePct >= 20 ? 'up' : 'down'} label="Cash cushion" />
+          <p className="mt-2.5 text-[11px] leading-relaxed text-ink-3">
+            A cushion means you never have to sell at a bad moment for a small emergency.
+          </p>
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2 text-[12.5px] font-semibold text-ink">
+              <PieChart className="h-4 w-4 text-brand" />
+              Money put to work
+            </div>
+            <span className="num text-[11px] font-semibold text-ink-3">ceiling ≤ 80%</span>
+          </div>
+          <p className="num mt-2 text-[28px] font-semibold leading-none text-ink">{exposurePct.toFixed(1)}%</p>
+          <Progress className="mt-3" value={exposurePct} tone={exposurePct <= 80 ? 'up' : 'down'} label="Invested share" />
+          <p className="mt-2.5 text-[11px] leading-relaxed text-ink-3">
+            Limiting how much is invested softens the blow when the whole market falls.
+          </p>
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2 text-[12.5px] font-semibold text-ink">
+              <Target className="h-4 w-4 text-brand" />
+              Most in one company
+            </div>
+            <span className="num text-[11px] font-semibold text-ink-3">cap ≤ 15%</span>
+          </div>
+          <p className="num mt-2 text-[28px] font-semibold leading-none text-ink">15.0%</p>
+          <Progress className="mt-3" value={15} tone="gold" label="Single-share cap" />
+          <p className="mt-2.5 text-[11px] leading-relaxed text-ink-3">
+            No single share can put more than 15% of your money at risk, however convincing the story sounds.
+          </p>
+        </Card>
       </div>
 
-      {/* Hard Risk Limit Gauges */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Min Cash Buffer */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-300">Minimum Cash Reserve Buffer</span>
-            <span className="font-mono text-blue-400 font-bold">Target: &ge; 20%</span>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-white font-mono">{cashReservePct.toFixed(1)}%</span>
-            <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-              <ShieldCheck className="h-4 w-4" /> COMPLIANT
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+      {/* Rules */}
+      <Card className="p-5">
+        <CardHeader
+          icon={<AlertTriangle className="h-4 w-4" />}
+          title="Every rule, in one place"
+          subtitle="Values are enforced by the app, not by the AI model."
+        />
+        <div className="mt-4 grid gap-2.5 md:grid-cols-2">
+          {RULES.map((rule) => (
             <div
-              className={`h-full rounded-full ${cashReservePct >= 20 ? 'bg-emerald-500' : 'bg-rose-500'}`}
-              style={{ width: `${Math.min(100, cashReservePct)}%` }}
-            />
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Enforces ₹5,000 cash buffer for margin shocks and opportunities.
+              key={rule.title}
+              className="flex items-start justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3"
+            >
+              <div className="min-w-0">
+                <p className="text-[12.5px] font-semibold text-ink">{rule.title}</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-ink-3">{rule.detail}</p>
+              </div>
+              <span className="num shrink-0 rounded-lg border border-white/[0.08] bg-black/20 px-2 py-1 text-[11px] font-semibold text-ink-2">
+                {rule.value}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
+          <p className="text-[11px] text-ink-3">
+            Current automation level: <span className="font-semibold text-ink-2">{permissions?.[0]?.control_mode ?? 'Copilot'}</span>
           </p>
-        </div>
-
-        {/* Max Portfolio Exposure */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-300">Total Portfolio Exposure</span>
-            <span className="font-mono text-purple-400 font-bold">Ceiling: &le; 80%</span>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-white font-mono">{exposurePct.toFixed(1)}%</span>
-            <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-              <ShieldCheck className="h-4 w-4" /> SAFE
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-            <div
-              className="h-full bg-purple-500 rounded-full"
-              style={{ width: `${Math.min(100, exposurePct)}%` }}
-            />
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Protects against systemic market drawdowns by limiting invested capital.
-          </p>
-        </div>
-
-        {/* Single Stock Concentration */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-300">Max Single Stock Allocation</span>
-            <span className="font-mono text-amber-400 font-bold">Cap: &le; 15%</span>
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-white font-mono">15.0%</span>
-            <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-              <ShieldCheck className="h-4 w-4" /> ENFORCED
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-            <div className="h-full bg-amber-500 rounded-full" style={{ width: '15%' }} />
-          </div>
-          <p className="text-[11px] text-slate-500">
-            No single company can jeopardize more than 15% of your total capital.
-          </p>
-        </div>
-      </div>
-
-      {/* Active Safeguard Matrix */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-        <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-          Active Deterministic Safeguards Matrix
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950">
-            <div>
-              <span className="font-bold text-slate-200 block">Daily Loss Safeguard</span>
-              <span className="text-slate-500">Auto-suspends orders if daily loss reaches threshold</span>
-            </div>
-            <span className="font-mono font-bold text-white">₹1,500.00</span>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950">
-            <div>
-              <span className="font-bold text-slate-200 block">Maximum Drawdown Circuit</span>
-              <span className="text-slate-500">Triggers emergency stop if drawdown exceeds peak limit</span>
-            </div>
-            <span className="font-mono font-bold text-white">10.0%</span>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950">
-            <div>
-              <span className="font-bold text-slate-200 block">Single Order Value Ceiling</span>
-              <span className="text-slate-500">Rejects fat-finger oversized market tickets</span>
-            </div>
-            <span className="font-mono font-bold text-white">₹10,000.00</span>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950">
-            <div>
-              <span className="font-bold text-slate-200 block">Order Frequency Throttle</span>
-              <span className="text-slate-500">Prevents runaway algorithmic order loops</span>
-            </div>
-            <span className="font-mono font-bold text-white">10 orders / day</span>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950">
-            <div>
-              <span className="font-bold text-slate-200 block">Market Hours Restriction</span>
-              <span className="text-slate-500">Restricts live execution to official NSE trading window</span>
-            </div>
-            <span className="font-mono font-bold text-white">09:20 - 15:15 IST</span>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-950">
-            <div>
-              <span className="font-bold text-slate-200 block">Real-Money Broker Isolation</span>
-              <span className="text-slate-500">Strict server-side check prevents unauthorized execution</span>
-            </div>
-            <span className="font-mono font-bold text-emerald-400">ACTIVE ARMED</span>
-          </div>
-        </div>
-
-        <div className="pt-2 flex justify-end">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Sliders className="h-3.5 w-3.5" />}
             onClick={() => onSelectView('permissions')}
-            className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-semibold"
           >
-            <Sliders className="h-3.5 w-3.5" />
-            <span>Customize Autonomy Risk Limits in Permissions &rarr;</span>
-          </button>
+            Automation controls
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

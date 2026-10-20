@@ -13,21 +13,21 @@ export default function SettingsView({ experienceMode, onToggleExperienceMode }:
   return (
     <div className="max-w-3xl space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between bg-slate-900 p-5 rounded-2xl border border-slate-800">
+      <div className="page-header">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-slate-800 text-slate-300">
+          <div className="p-2.5 rounded-xl bg-white/[0.06] text-ink-2">
             <Settings className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Platform Settings & User Preferences</h1>
-            <p className="text-xs text-slate-400">
-              Manage interface experience, default risk thresholds, and notification delivery.
+            <h1 className="text-lg font-bold text-white">Settings</h1>
+            <p className="text-xs text-ink-2">
+              Choose how much detail you see, and review your regional and cost assumptions.
             </p>
           </div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 space-y-6 text-xs">
+      <div className="card p-6 space-y-6 text-xs">
         {/* User Profile */}
         <div className="space-y-3">
           <h3 className="font-bold text-sm text-white flex items-center gap-2">
@@ -36,60 +36,60 @@ export default function SettingsView({ experienceMode, onToggleExperienceMode }:
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-slate-400 mb-1">Full Name</label>
+              <label className="block text-ink-2 mb-1">Full Name</label>
               <input
                 type="text"
                 disabled
                 value="Rajesh K. Verma"
-                className="w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-slate-300"
+                className="w-full rounded-lg border border-white/[0.08] bg-black/30 p-2 text-ink-2"
               />
             </div>
             <div>
-              <label className="block text-slate-400 mb-1">Account Email</label>
+              <label className="block text-ink-2 mb-1">Account Email</label>
               <input
                 type="text"
                 disabled
                 value="investor@investpilot.ai"
-                className="w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-slate-300"
+                className="w-full rounded-lg border border-white/[0.08] bg-black/30 p-2 text-ink-2"
               />
             </div>
           </div>
         </div>
 
         {/* Experience Mode Toggle */}
-        <div className="border-t border-slate-800 pt-5 space-y-3">
-          <h3 className="font-bold text-sm text-white">Interface Experience Mode</h3>
+        <div className="border-t border-white/[0.08] pt-5 space-y-3">
+          <h3 className="font-bold text-sm text-white">How much detail to show</h3>
           <div className="grid grid-cols-2 gap-3">
             <div
               onClick={() => onToggleExperienceMode('BEGINNER')}
               className={`p-3 rounded-lg border cursor-pointer transition ${
                 experienceMode === 'BEGINNER'
                   ? 'border-indigo-500 bg-indigo-950/20 text-white font-bold'
-                  : 'border-slate-800 bg-slate-950 text-slate-400'
+                  : 'border-white/[0.08] bg-black/30 text-ink-2'
               }`}
             >
-              <span className="block font-bold">Beginner Mode</span>
-              <span className="text-[11px] text-slate-400">Guided explanations, glossary, visual indicators</span>
+              <span className="block font-bold">Simple view</span>
+              <span className="text-[11px] text-ink-2">Plain language, guided steps and the glossary</span>
             </div>
             <div
               onClick={() => onToggleExperienceMode('ADVANCED')}
               className={`p-3 rounded-lg border cursor-pointer transition ${
                 experienceMode === 'ADVANCED'
                   ? 'border-indigo-500 bg-indigo-950/20 text-white font-bold'
-                  : 'border-slate-800 bg-slate-950 text-slate-400'
+                  : 'border-white/[0.08] bg-black/30 text-ink-2'
               }`}
             >
-              <span className="block font-bold">Advanced Workspace</span>
-              <span className="text-[11px] text-slate-400">Full quant metrics, order books, technical depth</span>
+              <span className="block font-bold">Detailed view</span>
+              <span className="text-[11px] text-ink-2">More metrics, charts and the full toolset</span>
             </div>
           </div>
         </div>
 
         {/* Currency & Regulation */}
-        <div className="border-t border-slate-800 pt-5 space-y-2">
+        <div className="border-t border-white/[0.08] pt-5 space-y-2">
           <h3 className="font-bold text-sm text-white">Regulatory Jurisdictions</h3>
-          <p className="text-slate-400 leading-relaxed">
-            Market: <strong>India (NSE / BSE)</strong> | Base Currency: <strong>Indian Rupee (INR ₹)</strong> | Statutory Tax: <strong>SEBI / Income Tax Department STT Compliant</strong>
+          <p className="text-ink-2 leading-relaxed">
+            Market scope: <strong>India (NSE / BSE)</strong> | Base currency: <strong>Indian Rupee (INR ₹)</strong> | Cost assumptions: <strong>illustrative estimates, not broker-confirmed charges</strong>
           </p>
         </div>
       </div>

@@ -1,7 +1,154 @@
 # InvestPilot AI 2.0 🇮🇳
-### Autonomous Personal Investment, Trading, Learning and Portfolio Management Platform
+### Research and Virtual-Trading Platform for Indian Equities
 
-InvestPilot AI 2.0 is an evidence-based personal investment and trading platform designed specifically for the Indian equity markets (NSE/BSE). It brings together autonomous AI research agents, strict deterministic mathematical risk controls, and a dual-portfolio architecture that completely isolates virtual simulation from authorized real-money broker execution.
+**Current build status: demo / paper-trading only.** InvestPilot AI 2.0 contains a research dashboard, strategy and proposal workflows, a virtual portfolio simulator, deterministic risk checks, and an audit trail. The checked-in seed data is synthetic demo content—not verified NSE prices, audited fundamentals, real news, or validated backtest results. This codebase does **not** yet contain a verified external market-data adapter or real broker authentication/order/fill-reconciliation adapter. Real-money orders and live broker connection attempts are intentionally blocked.
+
+---
+
+## Authentication, Authorization & Data Provenance
+
+### Signing in
+
+Every API route except `POST /api/auth/login` requires a valid session. The
+Next.js UI shows a sign-in screen when no session exists.
+
+```bash
+# 1. Create the account row first (the seeded demo user already exists).
+# 2. Provision a password (never stored in source, never printed):
+INVESTPILOT_ADMIN_EMAIL="you@example.com" \
+INVESTPILOT_ADMIN_PASSWORD="a-long-unique-passphrase" \
+npm run auth:set-password
+```
+
+There is **no default account, no default password, no bypass header and no
+environment variable that logs a user in**. Passwords are stored as salted
+scrypt hashes in `user_credentials`. Sessions are HMAC-SHA256 signed tokens in
+an `HttpOnly`, `SameSite=Lax`, `Path=/` cookie that is `Secure` whenever
+`NODE_ENV=production`.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `INVESTPILOT_SESSION_SECRET` | **yes in production** (32+ chars) | Signs session cookies. Without it in production every session is rejected (401/503) — there is no fallback. In development a per-process random secret is generated. |
+| `INVESTPILOT_SESSION_TTL_SECONDS` | no | Session lifetime, default `28800` (8 h), clamped to 300–604800. |
+| `INVESTPILOT_ADMIN_EMAIL` / `INVESTPILOT_ADMIN_PASSWORD` | only for `auth:set-password` | Provisioning input. Never read by the running server. |
+| `INVESTPILOT_SYSTEM_ADMIN_USER_IDS` | no (empty = no operators) | Comma-separated exact user IDs allowed to trigger jobs/scans. |
+| `INVESTPILOT_LOGIN_MAX_FAILURES` / `INVESTPILOT_LOGIN_WINDOW_SECONDS` | no | Sign-in throttle (default 10 / 900 s). |
+| `INVESTPILOT_TRUST_PROXY` / `INVESTPILOT_TRUSTED_PROXY_HEADER` | no | Only set when a reverse proxy overwrites the forwarding header. |
+
+Because production cookies are `Secure`, a production server (`npm start`,
+`NODE_ENV=production`) must be reached over HTTPS. Use `npm run dev` for plain
+HTTP on localhost.
+
+### Route protection
+
+| Route | Method | Policy |
+| --- | --- | --- |
+| `/api/auth/login` | POST | Public. Rate-limited (10 failed attempts / 15 min per IP+email). |
+| `/api/auth/logout` | POST | Public (idempotent); clears the cookie and audits when a session existed. |
+| `/api/auth/session` | GET | Requires a session; returns the caller. |
+| `/api/portfolios` | GET | Session; scoped to `portfolios.user_id` (positions and ledger joined through it). |
+| `/api/orders` | GET | Session; scoped; a `portfolioId` that is not yours returns 404. |
+| `/api/orders` | POST | Session; portfolio ownership checked before execution. |
+| `/api/proposals` | GET | Session; scoped. |
+| `/api/proposals` | POST `generate` | Session; target portfolio ownership checked. |
+| `/api/proposals` | POST `respond` | Session; proposal existence **and** ownership resolved in one query; 404 otherwise. |
+| `/api/settings` | GET/POST | Session; the hardcoded user id was removed — the session identity is used. |
+| `/api/broker` | GET/POST | Session; scoped; a `userId` in the body is rejected, never trusted. |
+| `/api/explainability` | GET/POST | Session; portfolio scoped (including evidence rows). |
+| `/api/market` | GET | Session; watchlists scoped to the caller. |
+| `/api/agents` | GET | Session. `agent_runs` and market-wide `agent_observations` are shared research (neither table has a user/portfolio column); `investment_theses` are scoped to the caller. |
+| `/api/agents` | POST | **Operator only** (403 otherwise) — a manual scan writes global observations. |
+| `/api/backtest` | GET/POST | Session. Deterministic computation over global market/strategy data that writes a shared research artifact; it reads no per-user portfolio, order, proposal or credential data. |
+| `/api/system` | GET | Session. Scheduler metadata, an honest `workerStatus`, and the caller's own audit rows only (never other users' or global audit rows). |
+| `/api/system` | POST | **Operator only** (403 otherwise) — triggers named jobs or every job. |
+
+Authorization lives in one shared guard, `src/lib/auth/guard.ts`
+(`requireAuth`, `requireOwnedPortfolio`, `requirePortfolioForRequest`).
+Identity always comes from the verified session; client-supplied `userId`,
+`x-user-id` or query parameters never change it.
+
+### System operator privileges
+
+Deployment-wide actions are restricted to explicitly configured operators:
+
+```bash
+# Comma-separated, exact user IDs. Empty by default => nobody is an operator.
+INVESTPILOT_SYSTEM_ADMIN_USER_IDS="usr_pilot_01"
+```
+
+The check lives in `src/lib/auth/operator.ts` (`requireOperator`). It compares
+the user id from the **verified session** against that list — a request body,
+query parameter or header can never grant the role, and there is no
+"first user becomes admin" fallback. Operators can `POST /api/system`
+(`trigger_job`, `run_all`) and `POST /api/agents` (`scan`); every other
+signed-in user gets **403**. `GET /api/auth/session` and both GET endpoints
+return `isOperator` for the caller only, so the UI can disable the buttons
+instead of failing silently.
+
+**Shared data visible to all authenticated users** (no per-user data involved):
+agent run metadata, market-wide observations, strategy/backtest research, asset
+quotes, news, and aggregated data-freshness counts. **Never shared**: another
+user's portfolios, positions, cash ledger, orders, executions, proposals,
+theses, broker connections, or audit rows.
+
+### Sign-in throttling and its deployment limits
+
+`src/lib/auth/rate-limit.ts` throttles failed sign-ins by **normalized email**
+(default: 10 failures / 15 minutes, configurable with
+`INVESTPILOT_LOGIN_MAX_FAILURES` and `INVESTPILOT_LOGIN_WINDOW_SECONDS`).
+
+- Client-supplied `X-Forwarded-For` is **ignored** unless the operator sets
+  `INVESTPILOT_TRUST_PROXY=1` *and* the reverse proxy is configured to
+  **overwrite** `INVESTPILOT_TRUSTED_PROXY_HEADER` (default `x-forwarded-for`)
+  on every request. Only then is a single, plausibly-formed address used as an
+  additional per-IP key. Multiple addresses in the header are treated as
+  unattributable and ignored.
+- Counters live in process memory, so this control is **single-instance only**.
+  There is no shared/Redis-style backend in this repository and none has been
+  added; a multi-instance deployment would need to replace it.
+- The key map is bounded (5 000 keys per limiter). Expired entries are swept
+  periodically and, at the cap, entries closest to expiry are evicted, so
+  attacker-controlled emails or headers cannot grow memory without bound.
+- Email-based limits can be abused to lock a known account out temporarily;
+  that trade-off is accepted in exchange for header-independent throttling.
+- Passwords, tokens and emails are never written to logs.
+
+### Provider trust (data provenance)
+
+Trust is **default-deny**. A quote is verified/actionable only when its
+freshness is `LIVE`, `DELAYED_15M` or `EOD` **and** its provider string is an
+exact, case-sensitive match in a configured allowlist:
+
+```bash
+INVESTPILOT_TRUSTED_QUOTE_PROVIDERS=""        # empty by default
+INVESTPILOT_TRUSTED_FUNDAMENTAL_SOURCES=""    # empty by default
+```
+
+Both lists ship empty because every price in this repository is a synthetic
+fixture. An unknown, unconfigured, lookalike or misspelled source is
+unverified and non-actionable; the word "demo" is used only for labels, never
+to grant trust. Enabling an allowlist does **not** create a feed — no real
+NSE/BSE adapter exists.
+
+### Known limitations
+
+- Single-tenant demo: one database, and login rate limiting is in-process only
+  (it resets on restart and is not shared between instances).
+- Operator privileges are configured by environment variable, not stored in the
+  database; there is no operator management UI and no audit of who was granted
+  the role.
+- Shared research actions that ordinary users may still run (`/api/backtest`,
+  `GET /api/agents`, `GET /api/system`) have no per-user quota, so they are a
+  resource-exhaustion surface rather than a data-disclosure one.
+- Worker state is only *known* when the scheduler runs inside the API process.
+  With the separate `npm run worker` daemon (the documented setup) `/api/system`
+  reports `status: "UNKNOWN"` plus the last recorded job run as evidence; it
+  deliberately never claims the worker is running.
+- Logout clears the client cookie; signed tokens are stateless and cannot be
+  revoked server-side before they expire.
+- This is not a hardened internet-facing auth service: there is no MFA, email
+  verification, password-reset flow or CSRF token (mitigated by `SameSite=Lax`
+  and JSON-only POST bodies).
 
 ---
 
@@ -17,8 +164,8 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
                       |                                                           |
                       v                                                           v
        +-------------------------------+                           +-------------------------------+
-       |   Environment A: Real-Money   |                           |   Environment B: Virtual      |
-       |     Authorized Demat Demat    |                           |     Persistent Simulator      |
+       |   Environment A: Live (BLOCKED) |                         |   Environment B: Virtual      |
+       |   No broker adapter yet       |                           |     Persistent Simulator      |
        |  (Zerodha / Angel / Upstox)   |                           |    Pre-funded: ₹25,000 INR    |
        +-------------------------------+                           +-------------------------------+
                       |                                                           |
@@ -58,8 +205,8 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
 ## 💎 The Four Specialised AI Agents
 
 1. **Agent 1: Market Intelligence Agent (`src/lib/agents/market-intelligence.ts`)**
-   - Monitors live & historical NSE quotes and corporate announcements.
-   - Separates empirical facts (e.g. *“ROCE is 48.5%, D/E is 0.0, volume +25% above 10-day avg”*) from model interpretations (*“High capital efficiency with zero balance-sheet risk”*).
+   - Reads local seeded market-data rows and sample announcements. Until an external provider is integrated, these rows are demo fixtures only.
+   - Keeps stored data and derived observations available for the UI; the current seed does not verify the sample values against real sources.
    - Generates priority watchlists. Strictly read-only; cannot submit orders.
 
 2. **Agent 2: Investment Strategist Agent (`src/lib/agents/strategist.ts`)**
@@ -68,9 +215,9 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
    - Produces structured, auditable proposals that require review or permission checks.
 
 3. **Agent 3: Portfolio & Execution Agent (`src/lib/agents/portfolio-execution.ts`)**
-   - Executes virtual trades through the realistic simulator with exact Indian statutory fees (STT, NSE turnover fees, SEBI charges, Stamp Duty, 18% GST, brokerage, and slippage).
-   - For real-money execution: performs server-side authorization checks, validates broker session, enforces SEBI compliance acknowledgment, and prevents duplicate orders.
-   - Maintains an immutable double-entry cash ledger.
+   - Simulates virtual trades using an estimated Indian transaction-cost model and a local ledger. These outputs are simulations, not exchange executions.
+   - Blocks all real-money orders because broker submission and broker-confirmed fill reconciliation are not implemented.
+   - Rejects client-supplied fill prices and invalid quantities; simulator execution requires stored quote data.
 
 4. **Agent 4: Explainability, Audit & Learning Agent (`src/lib/agents/explainability.ts`)**
    - Records pre-execution decision rationale **before** order submission (no retroactive justification).
@@ -84,7 +231,7 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
 
 ## 🛡️ Deterministic Risk Management Engine
 
-All risk boundaries are computed with deterministic TypeScript code, never free-form LLM output:
+Risk checks are deterministic TypeScript code, not free-form LLM output. They are safety controls, not a guarantee of profit or a substitute for validating the input data:
 - **Maximum Single Stock Allocation:** Capped at 15% of portfolio NAV.
 - **Minimum Cash Reserve Buffer:** Preserves a minimum 20% liquid cash buffer at all times.
 - **Maximum Portfolio Exposure:** Maximum 80% invested.
@@ -96,9 +243,9 @@ All risk boundaries are computed with deterministic TypeScript code, never free-
 
 ---
 
-## 🇮🇳 Real Statutory Indian Transaction Costs
+## 🇮🇳 Estimated Indian Transaction-Cost Model
 
-The platform models actual Indian regulatory taxes:
+The simulator estimates transaction costs using configured rates. These are illustrative estimates, not broker-confirmed charges or legal/tax advice. Verify current rates before relying on them:
 - **STT (Securities Transaction Tax):** 0.1% on delivery (CNC) buy & sell; 0.025% on intraday sell.
 - **Exchange Turnover Charges:** 0.00345% (NSE).
 - **SEBI Turnover Charges:** ₹10 per crore (0.0001%).
@@ -109,20 +256,49 @@ The platform models actual Indian regulatory taxes:
 
 ---
 
-## 🎛️ Five User Autonomy Modes
+## 🎛️ Control Modes in This Build
 
-1. **Mode 1: Manual** - User directs all orders; AI provides research and risk validation.
-2. **Mode 2: AI Copilot** (Default) - AI researches and formulates proposals; user reviews and approves each order.
-3. **Mode 3: Supervised Automation** - AI monitors and manages rebalancing within strict limits; user notified.
-4. **Mode 4: Autonomous Paper Trading** - AI autonomously manages the virtual ₹25,000 simulator.
-5. **Mode 5: Authorised Live Automation** - AI submits eligible real orders only after multi-factor broker authentication, SEBI compliance confirmation, and hard risk checks.
+The interface uses friendlier labels than the internal mode names; the mapping is in brackets.
+
+1. **Mode 1: Manual** [“Watch only”] - User directs all orders; AI provides research and risk validation.
+2. **Mode 2: AI Copilot** [“AI suggests, you decide”] (Default) - AI researches and formulates proposals; user reviews and approves each order.
+3. **Mode 3: Supervised Automation** [“AI helps with rebalancing”] - AI monitors and manages rebalancing within strict limits; user notified.
+4. **Mode 4: Autonomous Paper Trading** [“Fully automated (practice money only)”] - AI autonomously manages the virtual ₹25,000 simulator.
+5. **Authorised Live Automation** [shown as unavailable] - UI/data model placeholder only. It is rejected by the API and must remain disabled until a real broker adapter, credentials handling, order submission, status polling, and fill/balance reconciliation are implemented and independently tested.
+
+---
+
+## ⚠️ Current limitations and safe use
+
+- Seeded OHLCV, fundamentals, news items, index cards and backtest records are for UI/demo testing only. They must not be described as verified or used to make investment decisions.
+- Market-data integration currently reads SQLite. No live NSE feed is wired in this branch; unknown, invalid, and stale quote states must fail closed for simulation.
+- Broker integration is intentionally disabled. Do not enter broker keys, secrets, PINs, or TOTP values into this build. A saved database row marked connected is not proof of a real session.
+- Real-money execution is blocked in the execution service. Do not bypass the guard, set a broker row to `CONNECTED`, or toggle `AUTHORISED_LIVE` manually.
+- Virtual trading is still a simulator. Costs are estimates and simulated fills do not establish likely future performance.
+- Before any live use, implement and test provider-specific auth, secret storage, idempotent broker order submission, broker status polling, partial-fill/cancel handling, and broker-confirmed positions/cash reconciliation. Keep candidate strategies in backtest and paper trading until separately validated.
+- The repository currently contains a SQLite file under `data/investpilot.db`. Back it up before running migrations or seed commands; seed re-runs are now non-destructive to existing portfolio rows.
+- This is a single-user local prototype and does not yet implement authenticated application sessions/authorization for its API routes. The npm scripts bind to `127.0.0.1` by default; do not expose the app to a LAN or the public internet until authentication, authorization, CSRF protection, and secret-management controls are implemented.
+- The current dependency tree reports npm security advisories, including critical/high severity items, and the current Next.js version is flagged as vulnerable. Run a reviewed dependency update and retest before any deployment; do not use `npm audit fix --force` blindly.
+
+## 🧭 Interface guide (beginner-first)
+
+The app is organised around what a first-time investor actually needs, not around internal module names:
+
+- **Everyday** — Home, Learn the basics, Practice portfolio, Explore shares, Ideas & decisions, Safety & limits.
+- **More tools** — research, AI assistants, orders and receipts, performance, backtesting, strategies, the read-only real account, broker status, automation controls, updates, system status and settings.
+
+House conventions in the UI:
+- Money is always shown in ₹ with Indian digit grouping; profit/loss is the only place green and red appear.
+- Plain words are preferred to jargon, and any technical term is one tap away in the built-in glossary (help icon in the top bar).
+- The top status strip states plainly that this is a practice build: simulated money, demo prices, and no real orders. A separate read-only banner appears when the real account is selected.
+- Every important figure is described in a sentence next to it, and empty states explain the next step instead of showing a blank table.
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+ or 22+
+- Node.js 22+ (required by the current better-sqlite3 dependency)
 - npm 9+
 
 ### Installation & Database Initialization
@@ -135,20 +311,42 @@ cd stocks-agent
 # Install dependencies
 npm install
 
-# Initialize and seed database with verified NSE market data
+# Initialize demo fixtures (synthetic data; not verified NSE data)
 npm run db:seed
 
-# Run automated test suites (12 unit and integration tests)
+# Provision your own login (there is no default account or password)
+INVESTPILOT_ADMIN_EMAIL="investor@investpilot.ai" \
+INVESTPILOT_ADMIN_PASSWORD="a-long-unique-passphrase" \
+npm run auth:set-password
+
+# Run automated test suite
 npm test
 
 # Build production application
 npm run build
 
-# Start web application
-npm run start
+# Start the app for local development (plain HTTP on http://localhost:3000)
+npm run dev
 ```
 
-The application will be live at `http://localhost:3000`.
+Open `http://localhost:3000` and sign in with the credentials you provisioned.
+The production entry point is `npm run start` (or the Dockerfile), which sets
+`NODE_ENV=production`; see [Local vs production](#local-vs-production) below.
+
+### Local vs production
+
+`NODE_ENV` is intentionally **not** set in `.env.example`. The command you run
+decides it: `npm run dev` runs in development, `npm run build` / `npm start`,
+the Dockerfile and docker-compose run in production.
+
+| | Development (`npm run dev`) | Production (`npm start`, Docker) |
+| --- | --- | --- |
+| Cookie `Secure` flag | omitted, so plain `http://localhost` works | **always set** — the app must be served over HTTPS |
+| `INVESTPILOT_SESSION_SECRET` | optional (per-process random; sessions reset on restart) | **required**, 32+ characters; no fallback — login returns 503 without it |
+
+Do not copy `NODE_ENV=production` into a local `.env`: the session cookie then
+carries `Secure`, the browser refuses to store it over plain HTTP, and sign-in
+appears to fail silently.
 
 ### Background Worker Runner
 To run the background scheduler daemon for periodic MTM revaluation, risk checks, and thesis reviews:
@@ -166,6 +364,12 @@ InvestPilot AI 2.0 includes automated test suites covering:
 - Strict financial isolation between Real and Virtual portfolios (`tests/execution-isolation.test.ts`)
 - Four AI agents coordination and grounded Q&A (`tests/agents.test.ts`)
 - Quantitative backtesting with no look-ahead bias (`tests/backtesting.test.ts`)
+- Money/percentage formatting and plain-language helpers used across the UI (`tests/format.test.ts`)
+- Session authentication, forged/expired tokens and cross-user isolation (`tests/auth-session.test.ts`, `tests/authz-ownership.test.ts`)
+- Default-deny provider trust and explicit allowlists (`tests/provider-trust.test.ts`)
+- Operator-only job/scan permissions (`tests/operator-permissions.test.ts`)
+- Sign-in throttling, including forged forwarding headers and key-map bounds (`tests/login-rate-limit.test.ts`)
+- Example configuration defaults (`tests/env-example.test.ts`)
 
 Run all tests:
 ```bash
