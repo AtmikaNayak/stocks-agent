@@ -10,7 +10,7 @@ export interface ExecuteOrderParams {
   assetId: string;
   side: OrderSide;
   quantity: number;
-  price?: number; // if omitted, uses latest verified market quote
+  price?: number; // supplied prices are rejected; simulated fills use the stored quote
   orderMode: 'MANUAL' | 'AI_PROPOSAL_APPROVED' | 'AUTONOMOUS_VIRTUAL' | 'AUTONOMOUS_LIVE';
   proposalId?: string;
   productType?: ProductType;
