@@ -7,13 +7,20 @@ import {
   Clock,
   ShieldCheck,
   Server,
-  Layers
+  Layers,
+  AlertCircle
 } from 'lucide-react';
 
-export default function SystemHealthView() {
+interface Props {
+  /** Only system operators may trigger global jobs (enforced server-side). */
+  canOperate?: boolean;
+}
+
+export default function SystemHealthView({ canOperate = false }: Props) {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState<string | null>(null);
+  const [jobMessage, setJobMessage] = useState<string | null>(null);
 
   const fetchHealth = () => {
     fetch('/api/system')
@@ -30,13 +37,23 @@ export default function SystemHealthView() {
 
   const handleTriggerJob = async (jobName: string) => {
     setTriggering(jobName);
+    setJobMessage(null);
     try {
       const res = await fetch('/api/system', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'trigger_job', jobName })
       });
-      if (res.ok) fetchHealth();
+      if (res.ok) {
+        fetchHealth();
+      } else {
+        const payload = await res.json().catch(() => ({} as { error?: string }));
+        setJobMessage(
+          res.status === 403
+            ? 'Only a system operator can trigger background jobs.'
+            : payload?.error || 'That job could not be started.'
+        );
+      }
     } finally {
       setTriggering(null);
     }
@@ -65,6 +82,21 @@ export default function SystemHealthView() {
           </span>
         </div>
       </div>
+
+      {jobMessage && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3.5 text-xs text-amber-200">
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+          <span>{jobMessage}</span>
+        </div>
+      )}
+
+      {!canOperate && (
+        <p className="text-[11px] leading-relaxed text-ink-3">
+          Background jobs change valuations and emergency-stop state for everyone, so only a
+          system operator can run them. You can still see their schedule and the caller&apos;s own
+          audit trail.
+        </p>
+      )}
 
       {loading ? (
         <div className="py-20 text-center text-xs text-ink-2">Checking worker heartbeat...</div>
@@ -103,8 +135,13 @@ export default function SystemHealthView() {
                       <td className="py-2.5 text-right font-sans">
                         <button
                           onClick={() => handleTriggerJob(j.job_name)}
-                          disabled={triggering === j.job_name}
-                          className="rounded bg-white/[0.06] hover:bg-white/[0.10] px-2.5 py-1 text-[11px] text-ink transition"
+                          disabled={triggering === j.job_name || !canOperate}
+                          title={
+                            canOperate
+                              ? 'Run this job now'
+                              : 'Only a system operator can trigger background jobs'
+                          }
+                          className="rounded bg-white/[0.06] px-2.5 py-1 text-[11px] text-ink transition hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:text-ink-3/50 disabled:hover:bg-white/[0.06]"
                         >
                           {triggering === j.job_name ? 'Running...' : 'Run Now'}
                         </button>

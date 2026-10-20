@@ -11,6 +11,8 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+# Production mode is set here (and in docker-compose), not in .env.example.
+# It makes session cookies `Secure`, so terminate TLS in front of this container.
 ENV NODE_ENV=production
 ENV PORT=3000
 

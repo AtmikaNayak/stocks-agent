@@ -20,12 +20,15 @@ interface Props {
   };
   onRefresh: () => void;
   onOpenProposalModal: () => void;
+  /** Only system operators may start a global scan (enforced server-side). */
+  canOperate?: boolean;
 }
 
 export default function AgentsView({
   agentsData,
   onRefresh,
-  onOpenProposalModal
+  onOpenProposalModal,
+  canOperate = false
 }: Props) {
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
@@ -43,6 +46,10 @@ export default function AgentsView({
       if (res.ok) {
         setScanMessage(data.scanResult?.summary || 'Scan completed successfully.');
         onRefresh();
+      } else if (res.status === 403) {
+        setScanMessage(data?.error || 'Only a system operator can start a global scan.');
+      } else {
+        setScanMessage(data?.error || 'The scan could not be started.');
       }
     } finally {
       setScanning(false);
@@ -95,8 +102,13 @@ export default function AgentsView({
         <div className="flex items-center gap-2">
           <button
             onClick={handleTriggerScan}
-            disabled={scanning}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 px-3.5 py-2 text-xs font-semibold text-white shadow transition"
+            disabled={scanning || !canOperate}
+            title={
+              canOperate
+                ? 'Start a market-wide scan'
+                : 'Only a system operator can start a market-wide scan'
+            }
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-ink-3 disabled:shadow-none"
           >
             <Play className="h-3.5 w-3.5" />
             <span>{scanning ? 'Scanning NSE...' : 'Run Market Intelligence Scan'}</span>

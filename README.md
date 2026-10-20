@@ -31,6 +31,9 @@ an `HttpOnly`, `SameSite=Lax`, `Path=/` cookie that is `Secure` whenever
 | `INVESTPILOT_SESSION_SECRET` | **yes in production** (32+ chars) | Signs session cookies. Without it in production every session is rejected (401/503) — there is no fallback. In development a per-process random secret is generated. |
 | `INVESTPILOT_SESSION_TTL_SECONDS` | no | Session lifetime, default `28800` (8 h), clamped to 300–604800. |
 | `INVESTPILOT_ADMIN_EMAIL` / `INVESTPILOT_ADMIN_PASSWORD` | only for `auth:set-password` | Provisioning input. Never read by the running server. |
+| `INVESTPILOT_SYSTEM_ADMIN_USER_IDS` | no (empty = no operators) | Comma-separated exact user IDs allowed to trigger jobs/scans. |
+| `INVESTPILOT_LOGIN_MAX_FAILURES` / `INVESTPILOT_LOGIN_WINDOW_SECONDS` | no | Sign-in throttle (default 10 / 900 s). |
+| `INVESTPILOT_TRUST_PROXY` / `INVESTPILOT_TRUSTED_PROXY_HEADER` | no | Only set when a reverse proxy overwrites the forwarding header. |
 
 Because production cookies are `Secure`, a production server (`npm start`,
 `NODE_ENV=production`) must be reached over HTTPS. Use `npm run dev` for plain
@@ -53,12 +56,62 @@ HTTP on localhost.
 | `/api/broker` | GET/POST | Session; scoped; a `userId` in the body is rejected, never trusted. |
 | `/api/explainability` | GET/POST | Session; portfolio scoped (including evidence rows). |
 | `/api/market` | GET | Session; watchlists scoped to the caller. |
-| `/api/agents`, `/api/backtest`, `/api/system` | GET/POST | Session. Backtest/agent artifacts are workspace-wide research data and are not row-scoped; `/api/system` audit rows are limited to the caller. |
+| `/api/agents` | GET | Session. `agent_runs` and market-wide `agent_observations` are shared research (neither table has a user/portfolio column); `investment_theses` are scoped to the caller. |
+| `/api/agents` | POST | **Operator only** (403 otherwise) — a manual scan writes global observations. |
+| `/api/backtest` | GET/POST | Session. Deterministic computation over global market/strategy data that writes a shared research artifact; it reads no per-user portfolio, order, proposal or credential data. |
+| `/api/system` | GET | Session. Scheduler metadata + the caller's own audit rows only (never other users' or global audit rows). |
+| `/api/system` | POST | **Operator only** (403 otherwise) — triggers named jobs or every job. |
 
 Authorization lives in one shared guard, `src/lib/auth/guard.ts`
 (`requireAuth`, `requireOwnedPortfolio`, `requirePortfolioForRequest`).
 Identity always comes from the verified session; client-supplied `userId`,
 `x-user-id` or query parameters never change it.
+
+### System operator privileges
+
+Deployment-wide actions are restricted to explicitly configured operators:
+
+```bash
+# Comma-separated, exact user IDs. Empty by default => nobody is an operator.
+INVESTPILOT_SYSTEM_ADMIN_USER_IDS="usr_pilot_01"
+```
+
+The check lives in `src/lib/auth/operator.ts` (`requireOperator`). It compares
+the user id from the **verified session** against that list — a request body,
+query parameter or header can never grant the role, and there is no
+"first user becomes admin" fallback. Operators can `POST /api/system`
+(`trigger_job`, `run_all`) and `POST /api/agents` (`scan`); every other
+signed-in user gets **403**. `GET /api/auth/session` and both GET endpoints
+return `isOperator` for the caller only, so the UI can disable the buttons
+instead of failing silently.
+
+**Shared data visible to all authenticated users** (no per-user data involved):
+agent run metadata, market-wide observations, strategy/backtest research, asset
+quotes, news, and aggregated data-freshness counts. **Never shared**: another
+user's portfolios, positions, cash ledger, orders, executions, proposals,
+theses, broker connections, or audit rows.
+
+### Sign-in throttling and its deployment limits
+
+`src/lib/auth/rate-limit.ts` throttles failed sign-ins by **normalized email**
+(default: 10 failures / 15 minutes, configurable with
+`INVESTPILOT_LOGIN_MAX_FAILURES` and `INVESTPILOT_LOGIN_WINDOW_SECONDS`).
+
+- Client-supplied `X-Forwarded-For` is **ignored** unless the operator sets
+  `INVESTPILOT_TRUST_PROXY=1` *and* the reverse proxy is configured to
+  **overwrite** `INVESTPILOT_TRUSTED_PROXY_HEADER` (default `x-forwarded-for`)
+  on every request. Only then is a single, plausibly-formed address used as an
+  additional per-IP key. Multiple addresses in the header are treated as
+  unattributable and ignored.
+- Counters live in process memory, so this control is **single-instance only**.
+  There is no shared/Redis-style backend in this repository and none has been
+  added; a multi-instance deployment would need to replace it.
+- The key map is bounded (5 000 keys per limiter). Expired entries are swept
+  periodically and, at the cap, entries closest to expiry are evicted, so
+  attacker-controlled emails or headers cannot grow memory without bound.
+- Email-based limits can be abused to lock a known account out temporarily;
+  that trade-off is accepted in exchange for header-independent throttling.
+- Passwords, tokens and emails are never written to logs.
 
 ### Provider trust (data provenance)
 
@@ -81,9 +134,12 @@ NSE/BSE adapter exists.
 
 - Single-tenant demo: one database, and login rate limiting is in-process only
   (it resets on restart and is not shared between instances).
-- No role separation — any authenticated user can run the shared research
-  actions (`/api/agents`, `/api/backtest`, `/api/system`), which are not
-  row-scoped.
+- Operator privileges are configured by environment variable, not stored in the
+  database; there is no operator management UI and no audit of who was granted
+  the role.
+- Shared research actions that ordinary users may still run (`/api/backtest`,
+  `GET /api/agents`, `GET /api/system`) have no per-user quota, so they are a
+  resource-exhaustion surface rather than a data-disclosure one.
 - Logout clears the client cookie; signed tokens are stateless and cannot be
   revoked server-side before they expire.
 - This is not a hardened internet-facing auth service: there is no MFA, email
@@ -254,17 +310,39 @@ npm install
 # Initialize demo fixtures (synthetic data; not verified NSE data)
 npm run db:seed
 
+# Provision your own login (there is no default account or password)
+INVESTPILOT_ADMIN_EMAIL="investor@investpilot.ai" \
+INVESTPILOT_ADMIN_PASSWORD="a-long-unique-passphrase" \
+npm run auth:set-password
+
 # Run automated test suite
 npm test
 
 # Build production application
 npm run build
 
-# Start web application
-npm run start
+# Start the app for local development (plain HTTP on http://localhost:3000)
+npm run dev
 ```
 
-The application will be live at `http://localhost:3000`.
+Open `http://localhost:3000` and sign in with the credentials you provisioned.
+The production entry point is `npm run start` (or the Dockerfile), which sets
+`NODE_ENV=production`; see [Local vs production](#local-vs-production) below.
+
+### Local vs production
+
+`NODE_ENV` is intentionally **not** set in `.env.example`. The command you run
+decides it: `npm run dev` runs in development, `npm run build` / `npm start`,
+the Dockerfile and docker-compose run in production.
+
+| | Development (`npm run dev`) | Production (`npm start`, Docker) |
+| --- | --- | --- |
+| Cookie `Secure` flag | omitted, so plain `http://localhost` works | **always set** — the app must be served over HTTPS |
+| `INVESTPILOT_SESSION_SECRET` | optional (per-process random; sessions reset on restart) | **required**, 32+ characters; no fallback — login returns 503 without it |
+
+Do not copy `NODE_ENV=production` into a local `.env`: the session cookie then
+carries `Secure`, the browser refuses to store it over plain HTTP, and sign-in
+appears to fail silently.
 
 ### Background Worker Runner
 To run the background scheduler daemon for periodic MTM revaluation, risk checks, and thesis reviews:
@@ -283,6 +361,11 @@ InvestPilot AI 2.0 includes automated test suites covering:
 - Four AI agents coordination and grounded Q&A (`tests/agents.test.ts`)
 - Quantitative backtesting with no look-ahead bias (`tests/backtesting.test.ts`)
 - Money/percentage formatting and plain-language helpers used across the UI (`tests/format.test.ts`)
+- Session authentication, forged/expired tokens and cross-user isolation (`tests/auth-session.test.ts`, `tests/authz-ownership.test.ts`)
+- Default-deny provider trust and explicit allowlists (`tests/provider-trust.test.ts`)
+- Operator-only job/scan permissions (`tests/operator-permissions.test.ts`)
+- Sign-in throttling, including forged forwarding headers and key-map bounds (`tests/login-rate-limit.test.ts`)
+- Example configuration defaults (`tests/env-example.test.ts`)
 
 Run all tests:
 ```bash

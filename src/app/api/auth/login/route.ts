@@ -8,6 +8,7 @@ import {
   sessionTtlSeconds
 } from '@/lib/auth/session';
 import { jsonError } from '@/lib/auth/guard';
+import { getLoginThrottle, trustedClientIp } from '@/lib/auth/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,38 +20,16 @@ export const dynamic = 'force-dynamic';
  * and no environment variable that logs a user in without a password.
  */
 
-const MAX_ATTEMPTS = 10;
-const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
-const attempts = new Map<string, { count: number; resetAt: number }>();
-
-function attemptKey(request: Request, email: string): string {
-  const forwarded = request.headers.get('x-forwarded-for') ?? '';
-  const ip = forwarded.split(',')[0]!.trim() || 'local';
-  return `${ip}|${email}`;
-}
-
-function isRateLimited(key: string, now = Date.now()): boolean {
-  const entry = attempts.get(key);
-  if (!entry) return false;
-  if (entry.resetAt <= now) {
-    attempts.delete(key);
-    return false;
-  }
-  return entry.count >= MAX_ATTEMPTS;
-}
-
-function recordFailure(key: string, now = Date.now()): void {
-  const entry = attempts.get(key);
-  if (!entry || entry.resetAt <= now) {
-    attempts.set(key, { count: 1, resetAt: now + ATTEMPT_WINDOW_MS });
-    return;
-  }
-  entry.count += 1;
-}
-
-export function resetLoginRateLimits(): void {
-  attempts.clear();
-}
+/**
+ * Throttling notes:
+ *  - the primary limiter key is the normalized email, never a request header;
+ *  - a client-supplied X-Forwarded-For can only influence throttling when the
+ *    operator explicitly sets INVESTPILOT_TRUST_PROXY=1 and a reverse proxy
+ *    overwrites INVESTPILOT_TRUSTED_PROXY_HEADER on every request;
+ *  - counters live in process memory (single-instance only) and the key map is
+ *    bounded and swept — see src/lib/auth/rate-limit.ts.
+ */
+export { resetLoginRateLimits } from '@/lib/auth/rate-limit';
 
 export async function POST(request: Request) {
   // Fail closed: without a signing secret the server cannot issue a safe session.
@@ -74,9 +53,20 @@ export async function POST(request: Request) {
     return jsonError('email and password are required.', 400);
   }
 
-  const key = attemptKey(request, email.trim().toLowerCase());
-  if (isRateLimited(key)) {
-    return jsonError('Too many sign-in attempts. Try again later.', 429);
+  const throttle = getLoginThrottle();
+  const attempt = { email: email.trim().toLowerCase(), ip: trustedClientIp(request) };
+  const verdict = throttle.evaluate(attempt);
+  if (verdict.limited) {
+    return NextResponse.json(
+      { error: 'Too many sign-in attempts. Try again later.' },
+      {
+        status: 429,
+        headers: {
+          'Cache-Control': 'no-store',
+          'Retry-After': String(verdict.retryAfterSeconds)
+        }
+      }
+    );
   }
 
   const row = db.queryOne<{ id: string; email: string; name: string; password_hash: string | null }>(
@@ -91,11 +81,13 @@ export async function POST(request: Request) {
   // without credentials are not distinguishable by response time.
   const passwordOk = verifyPassword(password, row?.password_hash ?? DUMMY_PASSWORD_HASH);
   if (!row || !row.password_hash || !passwordOk) {
-    recordFailure(key);
+    // Counted under the normalized email (and the proxy-supplied IP only when
+    // proxy trust is explicitly configured).
+    throttle.recordFailure(attempt);
     return jsonError('Invalid email or password.', 401);
   }
 
-  attempts.delete(key);
+  throttle.reset(attempt);
 
   const { token, payload } = issueSessionToken(row.id);
   db.execute(

@@ -64,6 +64,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [sessionUser, setSessionUser] = useState<{ id: string; email: string; name: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  // Server-assigned: whether this session may run deployment-wide operations.
+  const [isOperator, setIsOperator] = useState(false);
 
   // Fetch all core data
   const loadData = async () => {
@@ -123,11 +125,13 @@ export default function HomePage() {
       .then((payload) => {
         if (cancelled) return;
         setSessionUser(payload?.user ?? null);
+        setIsOperator(Boolean(payload?.isOperator));
         setAuthChecked(true);
       })
       .catch(() => {
         if (cancelled) return;
         setSessionUser(null);
+        setIsOperator(false);
         setAuthChecked(true);
       });
     return () => {
@@ -149,6 +153,7 @@ export default function HomePage() {
       // Signing out of the UI must succeed even if the request fails.
     }
     setSessionUser(null);
+    setIsOperator(false);
     setPortfolios([]);
     setPositions([]);
     setLedger([]);
@@ -350,6 +355,7 @@ export default function HomePage() {
 
           {currentView === 'agents' && (
             <AgentsView
+              canOperate={isOperator}
               agentsData={{ runs, observations, theses }}
               onRefresh={loadData}
               onOpenProposalModal={() => setIsProposalModalOpen(true)}
@@ -418,7 +424,7 @@ export default function HomePage() {
           )}
 
           {currentView === 'system-health' && (
-            <SystemHealthView />
+            <SystemHealthView canOperate={isOperator} />
           )}
           </div>
 

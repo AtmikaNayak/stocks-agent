@@ -243,7 +243,7 @@ describe('authentication boundary', () => {
     expect(after.status).toBe(401);
   });
 
-  it('rate-limits repeated failed sign-ins', async () => {
+  it('rate-limits repeated failed sign-ins for the same account', async () => {
     let lastStatus = 0;
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const response = await postLogin(loginRequest(USER_B.email, 'wrong-password-value'));
