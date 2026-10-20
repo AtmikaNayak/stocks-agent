@@ -37,23 +37,33 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { portfolioId, assetId, side, quantity, price, orderMode = 'MANUAL', productType = 'CNC', proposalId } = body;
 
-    if (!portfolioId || !assetId || !side || !quantity) {
+    if (!portfolioId || !assetId || !side || quantity === undefined || quantity === null) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
+    }
+    if (side !== 'BUY' && side !== 'SELL') {
+      return NextResponse.json({ error: 'side must be BUY or SELL' }, { status: 400 });
+    }
+    const numericQuantity = Number(quantity);
+    if (!Number.isSafeInteger(numericQuantity) || numericQuantity <= 0) {
+      return NextResponse.json({ error: 'quantity must be a positive whole number of shares' }, { status: 400 });
+    }
+    if (price !== undefined) {
+      return NextResponse.json({ error: 'Custom fill prices are not supported. Use the stored quote for simulation.' }, { status: 400 });
     }
 
     const result = await portfolioExecutionAgent.executeOrder({
       portfolioId,
       assetId,
       side,
-      quantity: Number(quantity),
-      price: price ? Number(price) : undefined,
+      quantity: numericQuantity,
       orderMode,
       productType,
       proposalId
     });
 
     return NextResponse.json({ success: true, result });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Execution error' }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Execution error';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
