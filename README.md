@@ -1,7 +1,7 @@
 # InvestPilot AI 2.0 🇮🇳
-### Autonomous Personal Investment, Trading, Learning and Portfolio Management Platform
+### Research and Virtual-Trading Platform for Indian Equities
 
-InvestPilot AI 2.0 is an evidence-based personal investment and trading platform designed specifically for the Indian equity markets (NSE/BSE). It brings together autonomous AI research agents, strict deterministic mathematical risk controls, and a dual-portfolio architecture that completely isolates virtual simulation from authorized real-money broker execution.
+**Current build status: demo / paper-trading only.** InvestPilot AI 2.0 contains a research dashboard, strategy and proposal workflows, a virtual portfolio simulator, deterministic risk checks, and an audit trail. The checked-in seed data is synthetic demo content—not verified NSE prices, audited fundamentals, real news, or validated backtest results. This codebase does **not** yet contain a verified external market-data adapter or real broker authentication/order/fill-reconciliation adapter. Real-money orders and live broker connection attempts are intentionally blocked.
 
 ---
 
@@ -17,8 +17,8 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
                       |                                                           |
                       v                                                           v
        +-------------------------------+                           +-------------------------------+
-       |   Environment A: Real-Money   |                           |   Environment B: Virtual      |
-       |     Authorized Demat Demat    |                           |     Persistent Simulator      |
+       |   Environment A: Live (BLOCKED) |                         |   Environment B: Virtual      |
+       |   No broker adapter yet       |                           |     Persistent Simulator      |
        |  (Zerodha / Angel / Upstox)   |                           |    Pre-funded: ₹25,000 INR    |
        +-------------------------------+                           +-------------------------------+
                       |                                                           |
@@ -58,8 +58,8 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
 ## 💎 The Four Specialised AI Agents
 
 1. **Agent 1: Market Intelligence Agent (`src/lib/agents/market-intelligence.ts`)**
-   - Monitors live & historical NSE quotes and corporate announcements.
-   - Separates empirical facts (e.g. *“ROCE is 48.5%, D/E is 0.0, volume +25% above 10-day avg”*) from model interpretations (*“High capital efficiency with zero balance-sheet risk”*).
+   - Reads local seeded market-data rows and sample announcements. Until an external provider is integrated, these rows are demo fixtures only.
+   - Keeps stored data and derived observations available for the UI; the current seed does not verify the sample values against real sources.
    - Generates priority watchlists. Strictly read-only; cannot submit orders.
 
 2. **Agent 2: Investment Strategist Agent (`src/lib/agents/strategist.ts`)**
@@ -68,9 +68,9 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
    - Produces structured, auditable proposals that require review or permission checks.
 
 3. **Agent 3: Portfolio & Execution Agent (`src/lib/agents/portfolio-execution.ts`)**
-   - Executes virtual trades through the realistic simulator with exact Indian statutory fees (STT, NSE turnover fees, SEBI charges, Stamp Duty, 18% GST, brokerage, and slippage).
-   - For real-money execution: performs server-side authorization checks, validates broker session, enforces SEBI compliance acknowledgment, and prevents duplicate orders.
-   - Maintains an immutable double-entry cash ledger.
+   - Simulates virtual trades using an estimated Indian transaction-cost model and a local ledger. These outputs are simulations, not exchange executions.
+   - Blocks all real-money orders because broker submission and broker-confirmed fill reconciliation are not implemented.
+   - Rejects client-supplied fill prices and invalid quantities; simulator execution requires stored quote data.
 
 4. **Agent 4: Explainability, Audit & Learning Agent (`src/lib/agents/explainability.ts`)**
    - Records pre-execution decision rationale **before** order submission (no retroactive justification).
@@ -84,7 +84,7 @@ InvestPilot AI 2.0 is an evidence-based personal investment and trading platform
 
 ## 🛡️ Deterministic Risk Management Engine
 
-All risk boundaries are computed with deterministic TypeScript code, never free-form LLM output:
+Risk checks are deterministic TypeScript code, not free-form LLM output. They are safety controls, not a guarantee of profit or a substitute for validating the input data:
 - **Maximum Single Stock Allocation:** Capped at 15% of portfolio NAV.
 - **Minimum Cash Reserve Buffer:** Preserves a minimum 20% liquid cash buffer at all times.
 - **Maximum Portfolio Exposure:** Maximum 80% invested.
@@ -109,15 +109,25 @@ The platform models actual Indian regulatory taxes:
 
 ---
 
-## 🎛️ Five User Autonomy Modes
+## 🎛️ Control Modes in This Build
 
 1. **Mode 1: Manual** - User directs all orders; AI provides research and risk validation.
 2. **Mode 2: AI Copilot** (Default) - AI researches and formulates proposals; user reviews and approves each order.
 3. **Mode 3: Supervised Automation** - AI monitors and manages rebalancing within strict limits; user notified.
 4. **Mode 4: Autonomous Paper Trading** - AI autonomously manages the virtual ₹25,000 simulator.
-5. **Mode 5: Authorised Live Automation** - AI submits eligible real orders only after multi-factor broker authentication, SEBI compliance confirmation, and hard risk checks.
+5. **Authorised Live Automation** - UI/data model placeholder only. It is rejected by the API and must remain disabled until a real broker adapter, credentials handling, order submission, status polling, and fill/balance reconciliation are implemented and independently tested.
 
 ---
+
+## ⚠️ Current limitations and safe use
+
+- Seeded OHLCV, fundamentals, news items, index cards and backtest records are for UI/demo testing only. They must not be described as verified or used to make investment decisions.
+- Market-data integration currently reads SQLite. No live NSE feed is wired in this branch; unknown, invalid, and stale quote states must fail closed for simulation.
+- Broker integration is intentionally disabled. Do not enter broker keys, secrets, PINs, or TOTP values into this build. A saved database row marked connected is not proof of a real session.
+- Real-money execution is blocked in the execution service. Do not bypass the guard, set a broker row to `CONNECTED`, or toggle `AUTHORISED_LIVE` manually.
+- Virtual trading is still a simulator. Costs are estimates and simulated fills do not establish likely future performance.
+- Before any live use, implement and test provider-specific auth, secret storage, idempotent broker order submission, broker status polling, partial-fill/cancel handling, and broker-confirmed positions/cash reconciliation. Keep candidate strategies in backtest and paper trading until separately validated.
+- The repository currently contains a SQLite file under `data/investpilot.db`. Back it up before running migrations or seed commands; seed re-runs are now non-destructive to existing portfolio rows.
 
 ## 🚀 Getting Started
 
@@ -135,7 +145,7 @@ cd stocks-agent
 # Install dependencies
 npm install
 
-# Initialize and seed database with verified NSE market data
+# Initialize demo fixtures (synthetic data; not verified NSE data)
 npm run db:seed
 
 # Run automated test suites (12 unit and integration tests)
