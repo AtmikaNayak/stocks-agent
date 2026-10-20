@@ -3,8 +3,15 @@ import db from '@/db';
 import brokerService from '@/lib/broker';
 
 export async function GET() {
-  const connections = db.query('SELECT * FROM broker_connections');
-  return NextResponse.json({ connections });
+  // Never return encrypted tokens, secrets, or full credential records to the browser.
+  const connections = db.query(`
+    SELECT id, broker_name, client_id, api_key_masked, status, status_message,
+           compliance_acknowledged, token_expires_at, last_synced_at, created_at, updated_at
+    FROM broker_connections
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+  `, ['usr_pilot_01']);
+  return NextResponse.json({ connections }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(request: Request) {
