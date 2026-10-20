@@ -114,6 +114,9 @@ export class PortfolioExecutionAgent {
 
     const quote = await marketData.getQuote(asset.symbol);
     if (!quote) throw new Error(`Market data unavailable for ${asset.symbol}. Order rejected.`);
+    if (quote.freshness === 'STALE') {
+      throw new Error(`Market data for ${asset.symbol} is stale. Refresh the data before simulating an order.`);
+    }
 
     const execPrice = quote.price;
     if (!Number.isFinite(execPrice) || execPrice <= 0) {
@@ -408,7 +411,7 @@ export class PortfolioExecutionAgent {
         portfolio.user_id,
         portfolioId,
         `Order Executed: ${side} ${quantity} ${asset.symbol}`,
-        `Successfully filled ${quantity} shares at ₹${execPrice}. Total regulatory charges & brokerage: ₹${charges.totalCharges}.`
+        `Virtual simulator fill: ${quantity} shares at ₹${execPrice} using ${quote.provider} data (${quote.freshness}). Charges estimate: ₹${charges.totalCharges}.`
       );
 
       return {
@@ -418,6 +421,9 @@ export class PortfolioExecutionAgent {
         side,
         quantity,
         fillPrice: execPrice,
+        quoteProvider: quote.provider,
+        quoteFreshness: quote.freshness,
+        simulated: portfolio.type === 'VIRTUAL',
         charges,
         newCash,
         newNav: totalNav,
