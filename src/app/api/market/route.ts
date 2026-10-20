@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
 import marketData from '@/lib/market-data';
 import db from '@/db';
+import { requireAuth } from '@/lib/auth/guard';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const userId = auth.value.id;
+
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol');
 
@@ -32,10 +39,11 @@ export async function GET(request: Request) {
   const quotes = await marketData.getAllQuotes();
   const news = db.query('SELECT * FROM news_items ORDER BY published_at DESC LIMIT 10');
   const watchlists = db.query(`
-    SELECT w.*, 
-      (SELECT COUNT(*) FROM watchlist_items WHERE watchlist_id = w.id) as item_count 
+    SELECT w.*,
+      (SELECT COUNT(*) FROM watchlist_items WHERE watchlist_id = w.id) as item_count
     FROM watchlists w
-  `);
+    WHERE w.user_id = ?
+  `, [userId]);
 
   return NextResponse.json({
     quotes,

@@ -10,3 +10,6 @@ data/*.db-shm
 
 # Disposable isolated database used only by Vitest
 data/investpilot.test.db*
+
+# TypeScript incremental build cache
+*.tsbuildinfo

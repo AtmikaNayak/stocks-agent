@@ -6,6 +6,7 @@ import EmergencyStopModal from '@/components/EmergencyStopModal';
 import OrderModal from '@/components/OrderModal';
 import ProposalModal from '@/components/ProposalModal';
 import GlossaryModal from '@/components/GlossaryModal';
+import LoginView from '@/components/LoginView';
 
 // Views
 import DashboardView from '@/components/views/DashboardView';
@@ -61,16 +62,29 @@ export default function HomePage() {
     currentTimeIST: '11:45 IST'
   });
   const [loading, setLoading] = useState(true);
+  const [sessionUser, setSessionUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   // Fetch all core data
   const loadData = async () => {
+    // Every endpoint below requires the session cookie; a 401 means the
+    // session expired or was revoked, so fall back to the sign-in screen.
+    const api = (url: string) =>
+      fetch(url).then((r) => {
+        if (r.status === 401) {
+          setSessionUser(null);
+          throw new Error('unauthenticated');
+        }
+        return r.json();
+      });
+
     try {
       const [portRes, mktRes, agentRes, propRes, setRes] = await Promise.all([
-        fetch('/api/portfolios').then((r) => r.json()),
-        fetch('/api/market').then((r) => r.json()),
-        fetch('/api/agents').then((r) => r.json()),
-        fetch('/api/proposals').then((r) => r.json()),
-        fetch('/api/settings').then((r) => r.json()),
+        api('/api/portfolios'),
+        api('/api/market'),
+        api('/api/agents'),
+        api('/api/proposals'),
+        api('/api/settings'),
       ]);
 
       setPortfolios(portRes.portfolios || []);
@@ -101,11 +115,47 @@ export default function HomePage() {
     }
   };
 
+  // Establish who the caller is before loading any portfolio data.
   useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/session')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (cancelled) return;
+        setSessionUser(payload?.user ?? null);
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSessionUser(null);
+        setAuthChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionUser) return;
     loadData();
     const interval = setInterval(loadData, 20000);
     return () => clearInterval(interval);
-  }, []);
+  }, [sessionUser]);
+
+  const handleSignOut = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Signing out of the UI must succeed even if the request fails.
+    }
+    setSessionUser(null);
+    setPortfolios([]);
+    setPositions([]);
+    setLedger([]);
+    setProposals([]);
+    setUserSettings(null);
+    setCurrentView('dashboard');
+  };
 
   const handleToggleEmergencyStop = async (enable: boolean, reason: string) => {
     const res = await fetch('/api/settings', {
@@ -145,7 +195,7 @@ export default function HomePage() {
   };
 
   const currentPortfolio = portfolios.find((p) => p.type === activePortfolioType) || portfolios[0] || {
-    id: 'port_virt_01',
+    id: '',
     name: 'Virtual Wealth Builder',
     type: 'VIRTUAL',
     current_cash: 25000,
@@ -154,6 +204,19 @@ export default function HomePage() {
   };
 
   const virtualPortfolio = portfolios.find((p) => p.type === 'VIRTUAL');
+
+  // No session: only the sign-in screen is reachable.
+  if (!authChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#070a12] text-sm text-ink-2">
+        Checking your session…
+      </div>
+    );
+  }
+
+  if (!sessionUser) {
+    return <LoginView onSignedIn={(user) => setSessionUser(user)} />;
+  }
 
   return (
     <div className="relative z-10 flex min-h-screen bg-transparent font-sans text-ink">
@@ -171,6 +234,8 @@ export default function HomePage() {
       {/* Main Content Area */}
       <div className="flex min-w-0 flex-1 flex-col">
         <Navbar
+          userName={sessionUser.name}
+          onSignOut={handleSignOut}
           onOpenMobileNav={() => setIsMobileNavOpen(true)}
           activePortfolioType={activePortfolioType}
           onTogglePortfolioType={(t) => setActivePortfolioType(t)}

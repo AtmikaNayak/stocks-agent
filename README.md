@@ -5,6 +5,93 @@
 
 ---
 
+## Authentication, Authorization & Data Provenance
+
+### Signing in
+
+Every API route except `POST /api/auth/login` requires a valid session. The
+Next.js UI shows a sign-in screen when no session exists.
+
+```bash
+# 1. Create the account row first (the seeded demo user already exists).
+# 2. Provision a password (never stored in source, never printed):
+INVESTPILOT_ADMIN_EMAIL="you@example.com" \
+INVESTPILOT_ADMIN_PASSWORD="a-long-unique-passphrase" \
+npm run auth:set-password
+```
+
+There is **no default account, no default password, no bypass header and no
+environment variable that logs a user in**. Passwords are stored as salted
+scrypt hashes in `user_credentials`. Sessions are HMAC-SHA256 signed tokens in
+an `HttpOnly`, `SameSite=Lax`, `Path=/` cookie that is `Secure` whenever
+`NODE_ENV=production`.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `INVESTPILOT_SESSION_SECRET` | **yes in production** (32+ chars) | Signs session cookies. Without it in production every session is rejected (401/503) — there is no fallback. In development a per-process random secret is generated. |
+| `INVESTPILOT_SESSION_TTL_SECONDS` | no | Session lifetime, default `28800` (8 h), clamped to 300–604800. |
+| `INVESTPILOT_ADMIN_EMAIL` / `INVESTPILOT_ADMIN_PASSWORD` | only for `auth:set-password` | Provisioning input. Never read by the running server. |
+
+Because production cookies are `Secure`, a production server (`npm start`,
+`NODE_ENV=production`) must be reached over HTTPS. Use `npm run dev` for plain
+HTTP on localhost.
+
+### Route protection
+
+| Route | Method | Policy |
+| --- | --- | --- |
+| `/api/auth/login` | POST | Public. Rate-limited (10 failed attempts / 15 min per IP+email). |
+| `/api/auth/logout` | POST | Public (idempotent); clears the cookie and audits when a session existed. |
+| `/api/auth/session` | GET | Requires a session; returns the caller. |
+| `/api/portfolios` | GET | Session; scoped to `portfolios.user_id` (positions and ledger joined through it). |
+| `/api/orders` | GET | Session; scoped; a `portfolioId` that is not yours returns 404. |
+| `/api/orders` | POST | Session; portfolio ownership checked before execution. |
+| `/api/proposals` | GET | Session; scoped. |
+| `/api/proposals` | POST `generate` | Session; target portfolio ownership checked. |
+| `/api/proposals` | POST `respond` | Session; proposal existence **and** ownership resolved in one query; 404 otherwise. |
+| `/api/settings` | GET/POST | Session; the hardcoded user id was removed — the session identity is used. |
+| `/api/broker` | GET/POST | Session; scoped; a `userId` in the body is rejected, never trusted. |
+| `/api/explainability` | GET/POST | Session; portfolio scoped (including evidence rows). |
+| `/api/market` | GET | Session; watchlists scoped to the caller. |
+| `/api/agents`, `/api/backtest`, `/api/system` | GET/POST | Session. Backtest/agent artifacts are workspace-wide research data and are not row-scoped; `/api/system` audit rows are limited to the caller. |
+
+Authorization lives in one shared guard, `src/lib/auth/guard.ts`
+(`requireAuth`, `requireOwnedPortfolio`, `requirePortfolioForRequest`).
+Identity always comes from the verified session; client-supplied `userId`,
+`x-user-id` or query parameters never change it.
+
+### Provider trust (data provenance)
+
+Trust is **default-deny**. A quote is verified/actionable only when its
+freshness is `LIVE`, `DELAYED_15M` or `EOD` **and** its provider string is an
+exact, case-sensitive match in a configured allowlist:
+
+```bash
+INVESTPILOT_TRUSTED_QUOTE_PROVIDERS=""        # empty by default
+INVESTPILOT_TRUSTED_FUNDAMENTAL_SOURCES=""    # empty by default
+```
+
+Both lists ship empty because every price in this repository is a synthetic
+fixture. An unknown, unconfigured, lookalike or misspelled source is
+unverified and non-actionable; the word "demo" is used only for labels, never
+to grant trust. Enabling an allowlist does **not** create a feed — no real
+NSE/BSE adapter exists.
+
+### Known limitations
+
+- Single-tenant demo: one database, and login rate limiting is in-process only
+  (it resets on restart and is not shared between instances).
+- No role separation — any authenticated user can run the shared research
+  actions (`/api/agents`, `/api/backtest`, `/api/system`), which are not
+  row-scoped.
+- Logout clears the client cookie; signed tokens are stateless and cannot be
+  revoked server-side before they expire.
+- This is not a hardened internet-facing auth service: there is no MFA, email
+  verification, password-reset flow or CSRF token (mitigated by `SameSite=Lax`
+  and JSON-only POST bodies).
+
+---
+
 ## 🏛️ Key System Architecture
 
 ```

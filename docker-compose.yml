@@ -10,6 +10,9 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      # Required: sessions cannot be signed without it. Compose fails fast
+      # rather than starting a server that silently refuses every login.
+      - INVESTPILOT_SESSION_SECRET=${INVESTPILOT_SESSION_SECRET:?set INVESTPILOT_SESSION_SECRET to 32+ random characters}
     volumes:
       - investpilot_data:/app/data
 

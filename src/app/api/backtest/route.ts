@@ -2,8 +2,18 @@ import { NextResponse } from 'next/server';
 import db from '@/db';
 import backtestEngine from '@/lib/backtesting/engine';
 import { ValidationError } from '@/lib/validation';
+import { requireAuth } from '@/lib/auth/guard';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+/**
+ * Backtests are research artifacts shared by the workspace, not per-user data,
+ * so they are not row-scoped. They still require an authenticated session.
+ */
+export async function GET(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   const backtests = db.query(`
     SELECT b.*, v.version_tag, s.name as strategy_name 
     FROM backtest_runs b
@@ -22,6 +32,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await request.json();
     const { strategyVersionId = 'ver_strat_1_v12', assetSymbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK'] } = body;

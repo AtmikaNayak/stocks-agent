@@ -3,31 +3,49 @@ import db from '@/db';
 import investmentStrategistAgent from '@/lib/agents/strategist';
 import portfolioExecutionAgent from '@/lib/agents/portfolio-execution';
 import { ValidationError } from '@/lib/validation';
+import { requireAuth, requireId, requireOwnedPortfolio } from '@/lib/auth/guard';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const userId = auth.value.id;
+
   const { searchParams } = new URL(request.url);
   const portfolioId = searchParams.get('portfolioId');
+
+  if (portfolioId) {
+    const owned = requireOwnedPortfolio(userId, portfolioId);
+    if (!owned.ok) return owned.response;
+  }
 
   let sql = `
     SELECT p.*, a.symbol, a.name, a.sector,
       r.passed as risk_passed, r.rejection_reasons as risk_reasons,
       r.calculated_exposure_after_pct, r.calculated_position_pct, r.cash_remaining_after
     FROM investment_proposals p
+    JOIN portfolios pt ON p.portfolio_id = pt.id
     JOIN assets a ON p.asset_id = a.id
     LEFT JOIN risk_assessments r ON r.proposal_id = p.id
+    WHERE pt.user_id = ?
   `;
-  const params: any[] = [];
+  const params: string[] = [userId];
   if (portfolioId) {
-    sql += ' WHERE p.portfolio_id = ?';
+    sql += ' AND p.portfolio_id = ?';
     params.push(portfolioId);
   }
   sql += ' ORDER BY p.created_at DESC LIMIT 50';
 
   const proposals = db.query(sql, params);
-  return NextResponse.json({ proposals });
+  return NextResponse.json({ proposals }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const userId = auth.value.id;
+
   try {
     const body = await request.json();
     const { action } = body;
@@ -35,9 +53,14 @@ export async function POST(request: Request) {
     // Action 1: Generate Proposal
     if (action === 'generate') {
       const { portfolioId, assetId, side = 'BUY', horizon = 'LONG_TERM' } = body;
+
+      // A proposal may only be created against a portfolio the caller owns.
+      const owned = requireOwnedPortfolio(userId, portfolioId);
+      if (!owned.ok) return owned.response;
+
       // The strategist agent validates its own inputs and rejects malformed requests.
       const proposal = await investmentStrategistAgent.evaluateAndPropose({
-        portfolioId,
+        portfolioId: owned.value.id,
         assetId,
         action: side,
         horizon
@@ -47,7 +70,13 @@ export async function POST(request: Request) {
 
     // Action 2: User Decision (Approve / Reject)
     if (action === 'respond') {
-      const { proposalId, decision } = body; // decision: 'APPROVE' | 'REJECT'
+      const proposalIdInput = requireId(body.proposalId, 'proposalId');
+      if (!proposalIdInput.ok) return proposalIdInput.response;
+      const proposalId = proposalIdInput.value;
+      const { decision } = body; // decision: 'APPROVE' | 'REJECT'
+
+      // Existence and ownership are resolved in a single query: a proposal that
+      // belongs to another user is indistinguishable from one that does not exist.
       const proposal = db.queryOne<{
         id: string;
         portfolio_id: string;
@@ -57,7 +86,12 @@ export async function POST(request: Request) {
         proposed_price: number;
         status: string;
         expires_at: string;
-      }>('SELECT * FROM investment_proposals WHERE id = ?', [proposalId]);
+      }>(
+        `SELECT p.* FROM investment_proposals p
+         JOIN portfolios pt ON p.portfolio_id = pt.id
+         WHERE p.id = ? AND pt.user_id = ?`,
+        [proposalId, userId]
+      );
 
       if (!proposal) {
         return NextResponse.json({ error: 'Proposal not found' }, { status: 404 });
@@ -83,7 +117,7 @@ export async function POST(request: Request) {
       }
 
       if (decision === 'REJECT') {
-        db.execute("UPDATE investment_proposals SET status = 'REJECTED_USER' WHERE id = ?", [proposalId]);
+        db.execute("UPDATE investment_proposals SET status = 'REJECTED_USER' WHERE id = ? AND status = 'PENDING'", [proposalId]);
         return NextResponse.json({ success: true, status: 'REJECTED_USER' });
       }
 

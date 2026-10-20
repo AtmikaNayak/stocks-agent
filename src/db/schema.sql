@@ -13,6 +13,16 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 1b. Local Credentials (scrypt password hashes)
+-- No default, seeded, or hardcoded password is ever inserted here. Operators
+-- provision credentials explicitly with `npm run auth:set-password`.
+CREATE TABLE IF NOT EXISTS user_credentials (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    password_hash TEXT NOT NULL,
+    password_updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_login_at TEXT
+);
+
 -- 2. User Settings & Control Modes
 -- control_mode: 'MANUAL', 'COPILOT', 'SUPERVISED', 'AUTONOMOUS_PAPER', 'AUTHORISED_LIVE'
 -- experience_mode: 'BEGINNER', 'ADVANCED'

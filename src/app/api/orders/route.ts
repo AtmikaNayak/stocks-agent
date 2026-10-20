@@ -1,38 +1,55 @@
 import { NextResponse } from 'next/server';
 import db from '@/db';
 import portfolioExecutionAgent from '@/lib/agents/portfolio-execution';
+import { requireAuth, requireOwnedPortfolio } from '@/lib/auth/guard';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const userId = auth.value.id;
+
   const { searchParams } = new URL(request.url);
   const portfolioId = searchParams.get('portfolioId');
 
-  let ordersSql = `
-    SELECT o.*, a.symbol, a.name 
-    FROM orders o 
-    JOIN assets a ON o.asset_id = a.id
-  `;
-  const params: any[] = [];
-
   if (portfolioId) {
-    ordersSql += ' WHERE o.portfolio_id = ?';
-    params.push(portfolioId);
+    // A portfolio id that is not yours is reported exactly like a missing one.
+    const owned = requireOwnedPortfolio(userId, portfolioId);
+    if (!owned.ok) return owned.response;
   }
-  ordersSql += ' ORDER BY o.submitted_at DESC LIMIT 50';
 
-  const orders = db.query(ordersSql, params);
+  const filter = portfolioId ? ' AND o.portfolio_id = ?' : '';
+  const params: string[] = portfolioId ? [userId, portfolioId] : [userId];
 
-  const executions = db.query(`
-    SELECT e.*, a.symbol, a.name 
-    FROM executions e 
-    JOIN assets a ON e.asset_id = a.id
-    ${portfolioId ? 'WHERE e.portfolio_id = ?' : ''}
-    ORDER BY e.executed_at DESC LIMIT 50
-  `, params);
+  const orders = db.query(
+    `SELECT o.*, a.symbol, a.name
+     FROM orders o
+     JOIN portfolios p ON o.portfolio_id = p.id
+     JOIN assets a ON o.asset_id = a.id
+     WHERE p.user_id = ?${filter}
+     ORDER BY o.submitted_at DESC LIMIT 50`,
+    params
+  );
 
-  return NextResponse.json({ orders, executions });
+  const executions = db.query(
+    `SELECT e.*, a.symbol, a.name
+     FROM executions e
+     JOIN portfolios p ON e.portfolio_id = p.id
+     JOIN assets a ON e.asset_id = a.id
+     WHERE p.user_id = ?${filter}
+     ORDER BY e.executed_at DESC LIMIT 50`,
+    params
+  );
+
+  return NextResponse.json({ orders, executions }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const userId = auth.value.id;
+
   try {
     const body = await request.json();
     const { portfolioId, assetId, side, quantity, price, orderMode = 'MANUAL', productType = 'CNC', proposalId } = body;
@@ -40,6 +57,11 @@ export async function POST(request: Request) {
     if (!portfolioId || !assetId || !side || quantity === undefined || quantity === null) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
+
+    // Ownership is checked before the execution agent runs.
+    const owned = requireOwnedPortfolio(userId, portfolioId);
+    if (!owned.ok) return owned.response;
+
     if (side !== 'BUY' && side !== 'SELL') {
       return NextResponse.json({ error: 'side must be BUY or SELL' }, { status: 400 });
     }
@@ -52,7 +74,7 @@ export async function POST(request: Request) {
     }
 
     const result = await portfolioExecutionAgent.executeOrder({
-      portfolioId,
+      portfolioId: owned.value.id,
       assetId,
       side,
       quantity: numericQuantity,

@@ -8,11 +8,14 @@ import {
   Menu,
   Lock,
   Info,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 
 interface Props {
+  userName?: string;
+  onSignOut?: () => void;
   activePortfolioType: 'REAL' | 'VIRTUAL';
   onTogglePortfolioType: (type: 'REAL' | 'VIRTUAL') => void;
   experienceMode: 'BEGINNER' | 'ADVANCED';
@@ -31,6 +34,8 @@ interface Props {
 }
 
 export default function Navbar({
+  userName,
+  onSignOut,
   activePortfolioType,
   onTogglePortfolioType,
   experienceMode,
@@ -169,6 +174,18 @@ export default function Navbar({
             <span className="hidden sm:inline">Practise a trade</span>
             <span className="sm:hidden">Trade</span>
           </Button>
+
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] px-2.5 py-2 text-[12px] font-medium text-ink-2 transition-colors hover:bg-white/[0.06] hover:text-ink"
+              title={userName ? `Signed in as ${userName} — sign out` : 'Sign out'}
+              aria-label="Sign out"
+            >
+              <LogOut className="h-[17px] w-[17px]" />
+              <span className="hidden xl:inline">Sign out</span>
+            </button>
+          )}
 
           <button
             onClick={onOpenEmergencyStop}

@@ -54,7 +54,9 @@ describe('Data provenance — synthetic data is never actionable', () => {
     expect(isVerifiedSource('SYNTHETIC_SEED — illustrative metrics; not verified')).toBe(false);
     expect(isVerifiedSource('')).toBe(false);
     expect(isVerifiedSource(null)).toBe(false);
-    expect(isVerifiedSource('NSE_XBRL_FILINGS')).toBe(true);
+    // Default-deny: a plausible-looking source name is not trusted unless an
+    // operator has explicitly allowlisted that exact string.
+    expect(isVerifiedSource('NSE_XBRL_FILINGS')).toBe(false);
 
     const provenance = describeFundamentalProvenance('SYNTHETIC_SEED — illustrative metrics; not verified');
     expect(provenance.isVerified).toBe(false);

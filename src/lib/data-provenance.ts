@@ -3,10 +3,24 @@ import { DataFreshness, MarketQuote } from './types';
 /**
  * Data-provenance rules.
  *
- * The single rule this module enforces: data is only "verified" or
- * "actionable" when its freshness and source actually say so. Everything else
- * — including the synthetic demo fixtures this build ships with — is
- * explicitly labelled as illustrative and non-actionable.
+ * Two independent conditions must both hold before data may be treated as
+ * verified/actionable:
+ *
+ *   1. The freshness flag must be an explicitly tradable value
+ *      (LIVE / DELAYED_15M / EOD) — not SYNTHETIC, STALE, HISTORICAL or unknown.
+ *   2. The provider/source string must be an **exact** match for an entry in an
+ *      operator-configured allowlist:
+ *        INVESTPILOT_TRUSTED_QUOTE_PROVIDERS
+ *        INVESTPILOT_TRUSTED_FUNDAMENTAL_SOURCES
+ *
+ * Nothing else is trusted. An unknown, unconfigured, mistyped or lookalike
+ * source is unverified and non-actionable by default. Trust is never inferred
+ * from a source string merely *not* containing words like "demo" or
+ * "synthetic" — those words are only used to make labels clearer.
+ *
+ * Both allowlists are empty unless configured, so this build trusts no
+ * provider at all by default. That is intentional: the repository ships
+ * synthetic demo fixtures and no real exchange feed.
  */
 
 /** Freshness values that can be treated as trusted market observations. */
@@ -21,7 +35,73 @@ const KNOWN_FRESHNESS: readonly DataFreshness[] = [
   'STALE'
 ];
 
+/** Used only to pick a clearer human-readable label — never to grant trust. */
 const SYNTHETIC_SOURCE_PATTERN = /(synthetic|demo|fixture|illustrat|seed|mock|placeholder|not\s*verified)/i;
+
+/** Conservative shape for a configured allowlist entry. */
+const ALLOWLIST_ENTRY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._:+-]{0,63}$/;
+
+const EMPTY_ALLOWLIST: ReadonlySet<string> = new Set<string>();
+
+export const TRUSTED_QUOTE_PROVIDERS_ENV = 'INVESTPILOT_TRUSTED_QUOTE_PROVIDERS';
+export const TRUSTED_FUNDAMENTAL_SOURCES_ENV = 'INVESTPILOT_TRUSTED_FUNDAMENTAL_SOURCES';
+
+/**
+ * Parses a comma-separated allowlist conservatively:
+ *  - entries are trimmed, empty entries are dropped;
+ *  - entries that are too long or contain unusual characters are dropped;
+ *  - matching is exact and case-sensitive (no substring, glob or fuzzy match).
+ */
+export function parseSourceAllowlist(raw: string | undefined | null): ReadonlySet<string> {
+  if (typeof raw !== 'string' || raw.trim() === '') return EMPTY_ALLOWLIST;
+
+  const allowed = new Set<string>();
+  for (const entry of raw.split(',')) {
+    const token = entry.trim();
+    if (token === '') continue;
+    if (!ALLOWLIST_ENTRY_PATTERN.test(token)) continue;
+    allowed.add(token);
+  }
+  return allowed;
+}
+
+const allowlistCache = new Map<string, ReadonlySet<string>>();
+
+function allowlistFromEnv(envName: string): ReadonlySet<string> {
+  const raw = process.env[envName] ?? '';
+  const cacheKey = `${envName}\u0000${raw}`;
+  const cached = allowlistCache.get(cacheKey);
+  if (cached) return cached;
+
+  const parsed = parseSourceAllowlist(raw);
+  if (allowlistCache.size > 32) allowlistCache.clear();
+  allowlistCache.set(cacheKey, parsed);
+  return parsed;
+}
+
+export function getTrustedQuoteProviders(): ReadonlySet<string> {
+  return allowlistFromEnv(TRUSTED_QUOTE_PROVIDERS_ENV);
+}
+
+export function getTrustedFundamentalSources(): ReadonlySet<string> {
+  return allowlistFromEnv(TRUSTED_FUNDAMENTAL_SOURCES_ENV);
+}
+
+/** True only for an exact, configured quote-provider match. */
+export function isTrustedQuoteProvider(source: string | null | undefined): boolean {
+  if (typeof source !== 'string') return false;
+  const token = source.trim();
+  if (token === '') return false;
+  return getTrustedQuoteProviders().has(token);
+}
+
+/** True only for an exact, configured fundamentals-source match. */
+export function isTrustedFundamentalSource(source: string | null | undefined): boolean {
+  if (typeof source !== 'string') return false;
+  const token = source.trim();
+  if (token === '') return false;
+  return getTrustedFundamentalSources().has(token);
+}
 
 export interface Provenance {
   /** Raw freshness flag carried by the data point. */
@@ -30,7 +110,7 @@ export interface Provenance {
   provider: string | null;
   /** True when the values are simulated fixtures rather than exchange records. */
   isSynthetic: boolean;
-  /** True when the source is a real, verified market-data provider. */
+  /** True when the source is an explicitly configured, trusted provider. */
   isVerified: boolean;
   /** True only for verified data that is recent enough to trade on. */
   isActionable: boolean;
@@ -52,12 +132,11 @@ export function isSyntheticSource(source: string | null | undefined): boolean {
 }
 
 /**
- * A fundamentals source counts as verified only when it is present and does not
- * describe itself as synthetic/demo/illustrative ("not verified" included).
+ * Fundamentals count as verified only when the source is an exact match for an
+ * operator-configured entry in INVESTPILOT_TRUSTED_FUNDAMENTAL_SOURCES.
  */
 export function isVerifiedSource(source: string | null | undefined): boolean {
-  if (typeof source !== 'string' || source.trim() === '') return false;
-  return !SYNTHETIC_SOURCE_PATTERN.test(source);
+  return isTrustedFundamentalSource(source);
 }
 
 export function describeQuoteProvenance(input: {
@@ -66,13 +145,14 @@ export function describeQuoteProvenance(input: {
 }): Provenance {
   const freshness = isKnownFreshness(input.freshness) ? input.freshness : 'UNKNOWN';
   const provider = input.provider ?? null;
+  const providerTrusted = isTrustedQuoteProvider(provider);
   const isSynthetic = freshness === 'SYNTHETIC' || isSyntheticSource(provider);
   const knownFreshness = isKnownFreshness(freshness) ? freshness : null;
   const isVerified =
     knownFreshness !== null &&
     ACTIONABLE_FRESHNESS.includes(knownFreshness) &&
     !isSynthetic &&
-    !isSyntheticSource(provider);
+    providerTrusted;
   const isActionable = isVerified && isActionableFreshness(knownFreshness);
 
   let label: string;
@@ -85,16 +165,18 @@ export function describeQuoteProvenance(input: {
   } else if (freshness === 'HISTORICAL') {
     label = 'Historical prices — reference only, not tradable now';
   } else if (isActionable) {
-    label = `Verified ${freshness.replace('_', ' ').toLowerCase()} prices from ${provider || 'market feed'}`;
+    label = `Verified ${freshness.replace('_', ' ').toLowerCase()} prices from ${provider}`;
+  } else if (!provider) {
+    label = 'Unverified prices — no data provider is recorded, so this cannot be trusted';
   } else {
-    label = `Unverified prices (${freshness}) — do not act on these`;
+    label = `Unverified prices from ${provider} — source is not on the configured trusted-provider list`;
   }
 
   return { freshness, provider, isSynthetic, isVerified, isActionable, label };
 }
 
 export function describeFundamentalProvenance(source: string | null | undefined): Provenance {
-  const isVerified = isVerifiedSource(source);
+  const isVerified = isTrustedFundamentalSource(source);
   const isSynthetic = isSyntheticSource(source);
   return {
     freshness: isVerified ? 'EOD' : 'UNKNOWN',
@@ -106,7 +188,9 @@ export function describeFundamentalProvenance(source: string | null | undefined)
       ? `Reported fundamentals from ${source}`
       : isSynthetic
         ? 'Illustrative demo fundamentals — not audited or exchange-verified'
-        : 'Fundamentals of unknown provenance — do not rely on these'
+        : source
+          ? `Fundamentals from ${source} are not on the configured trusted-source list — do not rely on these`
+          : 'Fundamentals of unknown provenance — do not rely on these'
   };
 }
 

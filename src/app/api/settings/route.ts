@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
 import db from '@/db';
+import { requireAuth } from '@/lib/auth/guard';
 
-const USER_ID = 'usr_pilot_01';
+export const dynamic = 'force-dynamic';
+
 const CONTROL_MODES = new Set(['MANUAL', 'COPILOT', 'SUPERVISED', 'AUTONOMOUS_PAPER', 'AUTHORISED_LIVE']);
 const EXPERIENCE_MODES = new Set(['BEGINNER', 'ADVANCED']);
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const USER_ID = auth.value.id;
+
   const settings = db.queryOne('SELECT * FROM user_settings WHERE user_id = ?', [USER_ID]);
   const permissions = db.query(`
     SELECT p.*, pt.type as portfolio_type, pt.name as portfolio_name
@@ -22,6 +28,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const USER_ID = auth.value.id;
+
   try {
     const body = await request.json();
     const { action } = body;
