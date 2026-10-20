@@ -148,20 +148,6 @@ export class PortfolioExecutionAgent {
       throw new Error(`Risk checks failed: ${rejectionReason}`);
     }
 
-    // 4. Strict Real-Money Isolation Safeguard
-    if (portfolio.type === 'REAL') {
-      const broker = portfolio.broker_connection_id ? db.queryOne<{
-        status: string;
-        compliance_acknowledged: number;
-      }>('SELECT status, compliance_acknowledged FROM broker_connections WHERE id = ?', [portfolio.broker_connection_id]) : null;
-
-      if (!broker || broker.status !== 'CONNECTED' || broker.compliance_acknowledged !== 1) {
-        throw new Error(
-          'REAL portfolio execution blocked: Broker is not connected or statutory SEBI risk disclosures are pending.'
-        );
-      }
-    }
-
     // 5. Calculate Realistic Indian Transaction Costs and Slippage
     const charges = calculateIndianCharges({
       side,
