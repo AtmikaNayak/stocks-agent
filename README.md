@@ -96,9 +96,9 @@ Risk checks are deterministic TypeScript code, not free-form LLM output. They ar
 
 ---
 
-## 🇮🇳 Real Statutory Indian Transaction Costs
+## 🇮🇳 Estimated Indian Transaction-Cost Model
 
-The platform models actual Indian regulatory taxes:
+The simulator estimates transaction costs using configured rates. These are illustrative estimates, not broker-confirmed charges or legal/tax advice. Verify current rates before relying on them:
 - **STT (Securities Transaction Tax):** 0.1% on delivery (CNC) buy & sell; 0.025% on intraday sell.
 - **Exchange Turnover Charges:** 0.00345% (NSE).
 - **SEBI Turnover Charges:** ₹10 per crore (0.0001%).
