@@ -2,11 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plug,
-  ShieldCheck,
   CheckCircle2,
   Lock,
   Power,
-  RotateCcw
 } from 'lucide-react';
 
 interface Props {
@@ -62,9 +60,9 @@ export default function BrokerView({ onRefresh }: Props) {
             <Plug className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Official Broker Integrations (Environment A)</h1>
+            <h1 className="text-lg font-bold text-white">Broker Integration Status (Unavailable)</h1>
             <p className="text-xs text-slate-400">
-              Compliant API connections to SEBI-registered brokers. All secrets stored encrypted.
+              No live broker adapter is implemented. Do not enter broker credentials in this demo build.
             </p>
           </div>
         </div>
