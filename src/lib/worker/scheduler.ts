@@ -17,7 +17,7 @@ export class BackgroundWorkerScheduler {
       } else if (jobName === 'portfolio_valuation_worker') {
         // Re-evaluate MTM for all open positions across portfolios
         const positions = db.query<{ id: string; portfolio_id: string; portfolio_type: 'REAL' | 'VIRTUAL'; symbol: string; quantity: number; average_buy_price: number }>(`
-          SELECT p.id, p.portfolio_id, p.portfolio_type, a.symbol, p.quantity, p.average_buy_price
+          SELECT p.id, p.portfolio_id, pf.type AS portfolio_type, a.symbol, p.quantity, p.average_buy_price
           FROM positions p
           JOIN assets a ON p.asset_id = a.id
           JOIN portfolios pf ON pf.id = p.portfolio_id
@@ -67,28 +67,37 @@ export class BackgroundWorkerScheduler {
           }
         }
       } else if (jobName === 'strategist_thesis_review') {
-        const theses = db.query<{ id: string; asset_id: string; stop_loss_price: number; target_price: number }>(
-          "SELECT * FROM investment_theses WHERE status = 'ACTIVE'"
-        );
+        // Thesis updates are simulated from local market data; never apply them to REAL accounts.
+        const theses = db.query<{ id: string; asset_id: string; stop_loss_price: number; target_price: number }>(`
+          SELECT th.id, th.asset_id, th.stop_loss_price, th.target_price
+          FROM investment_theses th
+          JOIN portfolios pf ON pf.id = th.portfolio_id
+          WHERE th.status = 'ACTIVE' AND pf.type = 'VIRTUAL'
+        `);
         for (const th of theses) {
-          const quote = db.queryOne<{ close: number }>('SELECT close FROM market_data_points WHERE asset_id = ? ORDER BY timestamp DESC LIMIT 1', [th.asset_id]);
-          if (quote) {
-            if (th.stop_loss_price && quote.close <= th.stop_loss_price) {
-              db.execute("UPDATE investment_theses SET status = 'INVALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
-              db.execute(`
-                INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
-                VALUES (?, ?, datetime('now'), 'INVALIDATED', ?)
-              `, [`rev_${Date.now()}`, th.id, `Stop loss breached at close ₹${quote.close}.`]);
-            } else if (th.target_price && quote.close >= th.target_price) {
-              db.execute("UPDATE investment_theses SET status = 'VALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
-              db.execute(`
-                INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
-                VALUES (?, ?, datetime('now'), 'VALIDATED', ?)
-              `, [`rev_${Date.now()}`, th.id, `Target price achieved at close ₹${quote.close}.`]);
-            }
+          const quote = db.queryOne<{ close: number; freshness_status: string; provider: string }>(
+            'SELECT close, freshness_status, provider FROM market_data_points WHERE asset_id = ? ORDER BY timestamp DESC LIMIT 1',
+            [th.asset_id]
+          );
+          if (!quote || !Number.isFinite(quote.close) || quote.close <= 0 ||
+              quote.freshness_status === 'STALE' || quote.freshness_status === 'VERIFIED') {
+            continue;
+          }
+          if (th.stop_loss_price && quote.close <= th.stop_loss_price) {
+            db.execute("UPDATE investment_theses SET status = 'INVALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
+            db.execute(`
+              INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
+              VALUES (?, ?, datetime('now'), 'INVALIDATED', ?)
+            `, [`rev_${Date.now()}`, th.id, `Demo-data close ₹${quote.close}; verify against a real data source before acting.`]);
+          } else if (th.target_price && quote.close >= th.target_price) {
+            db.execute("UPDATE investment_theses SET status = 'VALIDATED', updated_at = datetime('now') WHERE id = ?", [th.id]);
+            db.execute(`
+              INSERT INTO thesis_reviews (id, thesis_id, review_date, status, notes)
+              VALUES (?, ?, datetime('now'), 'VALIDATED', ?)
+            `, [`rev_${Date.now()}`, th.id, `Demo-data close ₹${quote.close}; verify against a real data source before acting.`]);
           }
         }
-        statusMessage = `Reviewed ${theses.length} active theses.`;
+        statusMessage = `Reviewed ${theses.length} virtual theses using local demo data; REAL theses are skipped.`;
       } else if (jobName === 'order_reconciliation_engine') {
         // Reconcile cash ledger entries with portfolio current_cash
         const ports = db.query<{ id: string; type: 'REAL' | 'VIRTUAL'; current_cash: number }>(
