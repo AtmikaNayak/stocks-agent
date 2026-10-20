@@ -47,6 +47,12 @@ export class PortfolioExecutionAgent {
       throw new Error(`Portfolio ${portfolioId} is not active or not found.`);
     }
 
+    // Fail closed for real-money accounts. No verified broker order submission
+    // and fill reconciliation adapter exists in this repository yet.
+    if (portfolio.type === 'REAL') {
+      throw new Error('REAL portfolio execution is disabled: a verified broker order adapter and fill reconciliation are not implemented. Use the virtual portfolio.');
+    }
+
     // 2. Fetch Asset & Current Price
     const asset = db.queryOne<{ id: string; symbol: string; name: string }>(
       'SELECT id, symbol, name FROM assets WHERE id = ?',
