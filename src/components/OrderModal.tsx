@@ -53,8 +53,12 @@ export default function OrderModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (portfolio.type === 'REAL') {
+      setError('Real-money orders are disabled in this build. Use the virtual simulator.');
+      return;
+    }
+    setLoading(true);
 
     try {
       const res = await fetch('/api/orders', {
@@ -100,10 +104,10 @@ export default function OrderModal({
               className={`rounded px-2 py-0.5 text-xs font-semibold ${
                 portfolio.type === 'VIRTUAL'
                   ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
               }`}
             >
-              {portfolio.type === 'VIRTUAL' ? 'Virtual Simulator' : 'Live Demat'}
+              {portfolio.type === 'VIRTUAL' ? 'Virtual Simulator' : 'REAL MONEY DISABLED'}
             </span>
             <h2 className="text-lg font-bold text-white">Place Order Ticket</h2>
           </div>
@@ -111,6 +115,12 @@ export default function OrderModal({
             Target Portfolio: <strong className="text-slate-200">{portfolio.name}</strong> (Available Cash: ₹{portfolio.current_cash.toLocaleString('en-IN')})
           </p>
         </div>
+
+        {portfolio.type === 'REAL' && (
+          <div className="mb-4 rounded-lg border border-rose-500/40 bg-rose-950/30 p-3 text-xs text-rose-200">
+            Real-money trading is disabled. This build has no verified broker authentication, live order submission, or broker-confirmed fill reconciliation.
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-200">
@@ -266,7 +276,7 @@ export default function OrderModal({
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || portfolio.type === 'REAL'}
               className={`rounded-lg px-5 py-2 text-xs font-semibold text-white shadow transition ${
                 side === 'BUY'
                   ? 'bg-emerald-600 hover:bg-emerald-500'
