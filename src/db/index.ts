@@ -28,6 +28,31 @@ export function initSchema(db: Database.Database) {
   if (fs.existsSync(schemaPath)) {
     const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
     db.exec(schemaSql);
+
+    // This codebase intentionally has no real broker authentication or order-fill
+    // adapter. Downgrade any "connected" mock sessions from earlier versions so
+    // they cannot be mistaken for authenticated broker connections.
+    db.prepare(`
+      UPDATE broker_connections
+      SET status = 'DISCONNECTED',
+          encrypted_access_token = NULL,
+          status_message = 'Live broker adapter is not implemented in this build; no authenticated session is active.',
+          updated_at = datetime('now')
+      WHERE status IN ('CONNECTED', 'CONNECTING')
+    `).run();
+    db.prepare(`
+      UPDATE portfolio_permissions
+      SET allow_autonomous_trading = 0
+      WHERE portfolio_id IN (SELECT id FROM portfolios WHERE type = 'REAL')
+    `).run();
+    db.prepare(`
+      UPDATE user_settings
+      SET control_mode = CASE
+            WHEN control_mode = 'AUTHORISED_LIVE' THEN 'COPILOT'
+            ELSE control_mode
+          END,
+          updated_at = datetime('now')
+    `).run();
   }
 }
 
