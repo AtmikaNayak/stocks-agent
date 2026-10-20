@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plug,
   ShieldCheck,
+  CheckCircle2,
   Lock,
   Power,
   RotateCcw
