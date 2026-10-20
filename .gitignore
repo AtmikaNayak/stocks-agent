@@ -1,0 +1,9 @@
+node_modules/
+.next/
+*.log
+.DS_Store
+dist/
+coverage/
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
