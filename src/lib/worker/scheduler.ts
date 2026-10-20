@@ -30,22 +30,22 @@ export class BackgroundWorkerScheduler {
           if (pos.portfolio_type === 'REAL') continue;
           const quote = await marketData.getQuote(pos.symbol);
           if (!quote || quote.freshness === 'STALE') continue;
-            const mktVal = Math.round(pos.quantity * quote.price * 100) / 100;
-            const cost = pos.quantity * pos.average_buy_price;
-            const unrealised = Math.round((mktVal - cost) * 100) / 100;
-            const unrealisedPct = Math.round((unrealised / cost) * 10000) / 100;
 
-            db.execute(`
-              UPDATE positions SET
-                current_price = ?,
-                current_market_value = ?,
-                unrealised_pnl = ?,
-                unrealised_pnl_pct = ?,
-                last_updated_at = datetime('now')
-              WHERE id = ?
-            `, [quote.price, mktVal, unrealised, unrealisedPct, pos.id]);
-            updatedPositions += 1;
-          }
+          const mktVal = Math.round(pos.quantity * quote.price * 100) / 100;
+          const cost = pos.quantity * pos.average_buy_price;
+          const unrealised = Math.round((mktVal - cost) * 100) / 100;
+          const unrealisedPct = Math.round((unrealised / cost) * 10000) / 100;
+
+          db.execute(`
+            UPDATE positions SET
+              current_price = ?,
+              current_market_value = ?,
+              unrealised_pnl = ?,
+              unrealised_pnl_pct = ?,
+              last_updated_at = datetime('now')
+            WHERE id = ?
+          `, [quote.price, mktVal, unrealised, unrealisedPct, pos.id]);
+          updatedPositions += 1;
         }
         statusMessage = `Re-evaluated ${updatedPositions} virtual positions; real portfolios skipped because broker valuation is not implemented.`;
       } else if (jobName === 'risk_safeguard_checks') {
