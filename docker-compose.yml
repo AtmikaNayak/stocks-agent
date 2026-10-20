@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: investpilot-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - investpilot_data:/app/data
+
+  worker:
+    build: .
+    container_name: investpilot-worker
+    restart: always
+    command: ["npm", "run", "worker"]
+    volumes:
+      - investpilot_data:/app/data
+
+volumes:
+  investpilot_data:
