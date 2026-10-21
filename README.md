@@ -38,7 +38,7 @@ Every API route except `POST /api/auth/login` requires a valid session. The UI s
 # 1. Create the account row first (the seeded demo user already exists).
 # 2. Provision a password (never stored in source, never printed):
 INVESTPILOT_ADMIN_EMAIL="you@example.com" \
-INVESTPILOT_ADMIN_PASSWORD="a-long-unique-passphrase" \
+INVESTPILOT_ADMIN_PASSWORD="<choose-a-long-unique-passphrase>" \
 npm run auth:set-password
 ```
 
@@ -335,7 +335,7 @@ npm run db:init               # schema + additive migrations (no data changes)
 npm run db:seed               # OPTIONAL: synthetic demo fixtures
 
 INVESTPILOT_ADMIN_EMAIL="investor@investpilot.ai" \
-INVESTPILOT_ADMIN_PASSWORD="a-long-unique-passphrase" \
+INVESTPILOT_ADMIN_PASSWORD="<choose-a-long-unique-passphrase>" \
 npm run auth:set-password
 
 npm run typecheck
