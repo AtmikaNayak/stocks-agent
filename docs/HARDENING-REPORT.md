@@ -3,7 +3,7 @@
 **Repository:** `AtmikaNayak/stocks-agent`
 **Branch of record:** `arena/de0ec973-stocks-agent`
 **Base commit:** `417e2ec` ("Report worker state truthfully and validate proxy IPs strictly")
-**Head at time of writing:** `e07f652`
+**Head at time of writing:** the tip of the branch; run `git log 417e2ec..HEAD` for the exact list.
 **Date:** 2026-10-21
 **Product scope:** demo / paper-trading only. No real money, no broker adapter, no
 live market data.
@@ -97,9 +97,9 @@ Found by reading the code, then confirmed with failing tests before fixing.
 
 ## 4. Changes made
 
-Eleven substantive commits, plus the later documentation update. Each was
-type-checked and tested before being committed; `lint` only existed from
-`8637f15` onwards and has passed since.
+Ordered oldest first. Each commit was type-checked and tested before it was
+made; `lint` only existed from `8637f15` onwards and has passed since. The last
+entries touch only this document and the README.
 
 | SHA | Change |
 | --- | --- |
@@ -283,7 +283,7 @@ any strategy is profitable. No manual exploratory testing session is claimed.
 | Base commit | `417e2ec` |
 | Base branch | untouched |
 | Working branch | `arena/de0ec973-stocks-agent` |
-| Commits added | 12 (`3dbb736`, `bbcd9da`, `b552804`, `25271f7`, `bb80866`, `22ae206`, `d203d32`, `8637f15`, `c1f312b`, `b22cd78`, `668671f`, `e07f652`) |
+| Commits added | Twelve from `3dbb736` to `e07f652`, plus documentation-only commits after that |
 | Force-push | none |
 | History rewrite | none |
 | Branch deletion | none |
