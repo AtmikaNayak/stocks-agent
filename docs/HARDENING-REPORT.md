@@ -385,6 +385,7 @@ any strategy is profitable. No manual exploratory testing session is claimed.
 | Branch deletion | none |
 | PR created / merged / closed / retargeted / marked ready | none |
 | Staging | explicit paths only |
+| CI | `.github/workflows/ci.yml` runs typecheck, lint, tests, production build and a production-dependency audit on every push; the run for the published tip is green (`gh run list --branch arena/de0ec973-stocks-agent`) |
 | Secrets / real `.env` / database files / backups / build artefacts committed | none (`data/investpilot.db` is not in this branch's diff; `.env.example` carries only empty placeholders) |
 
 **Branch name deviation, restated.** The brief asked for
