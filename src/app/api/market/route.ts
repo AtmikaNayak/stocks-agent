@@ -51,6 +51,10 @@ export async function GET(request: Request) {
     quotes,
     news,
     watchlists,
-    session
+    session,
+    // Reported so the UI can say "weekends enforced, holiday calendar not
+    // configured" instead of implying full exchange-calendar awareness.
+    holidayCalendarConfigured: session.holidayCalendarConfigured,
+    providers: providerRegistry.health()
   });
 }

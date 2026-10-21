@@ -1,3 +1,4 @@
+import { getExchangeSession } from '../trading-calendar';
 import db from '../../db';
 import { MarketQuote, AssetFundamental, DataFreshness } from '../types';
 
@@ -9,9 +10,12 @@ export interface IMarketDataProvider {
   getMarketSessionStatus(): {
     isOpen: boolean;
     exchange: string;
-    session: 'PRE_OPEN' | 'REGULAR' | 'POST_CLOSE' | 'CLOSED';
-    nextOpenIST: string;
+    session: 'PRE_OPEN' | 'REGULAR' | 'CLOSED';
     currentTimeIST: string;
+    /** `YYYY-MM-DD` in Asia/Kolkata. */
+    dateIST: string;
+    /** True only when INVESTPILOT_TRADING_HOLIDAYS supplies a date list. */
+    holidayCalendarConfigured: boolean;
     message: string;
   };
 }
@@ -184,43 +188,20 @@ export class MarketDataService implements IMarketDataProvider {
   }
 
   getMarketSessionStatus() {
-    // Current IST time (UTC + 5:30)
-    const now = new Date();
-    const utcHours = now.getUTCHours();
-    const utcMins = now.getUTCMinutes();
-    const istMinutesTotal = (utcHours * 60 + utcMins + 330) % 1440;
-    const istHours = Math.floor(istMinutesTotal / 60);
-    const istMins = istMinutesTotal % 60;
-    const istDay = (now.getUTCDay() + (utcHours * 60 + utcMins + 330 >= 1440 ? 1 : 0)) % 7;
-
-    const isWeekday = istDay >= 1 && istDay <= 5;
-    const isPreOpen = isWeekday && istMinutesTotal >= 540 && istMinutesTotal < 555; // 09:00 - 09:15
-    const isRegular = isWeekday && istMinutesTotal >= 555 && istMinutesTotal < 930; // 09:15 - 15:30
-    const isPostClose = isWeekday && istMinutesTotal >= 930 && istMinutesTotal < 960; // 15:30 - 16:00
-
-    const timeStr = `${String(istHours).padStart(2, '0')}:${String(istMins).padStart(2, '0')} IST`;
-
-    let session: 'PRE_OPEN' | 'REGULAR' | 'POST_CLOSE' | 'CLOSED' = 'CLOSED';
-    let message = 'National Stock Exchange (NSE) is currently closed. Weekend / After-hours.';
-
-    if (isRegular) {
-      session = 'REGULAR';
-      message = 'NSE regular trading session active. Continuous equity auction in progress.';
-    } else if (isPreOpen) {
-      session = 'PRE_OPEN';
-      message = 'NSE pre-open discovery session active.';
-    } else if (isPostClose) {
-      session = 'POST_CLOSE';
-      message = 'NSE post-closing session in progress.';
-    }
-
+    // Delegates to the shared exchange calendar so the API status, the risk
+    // engine and the UI can never disagree about whether the session is open.
+    // The previous implementation did its own UTC+5:30 arithmetic (which went
+    // wrong across the IST date rollover), invented a fixed "next open" string
+    // and reported a POST_CLOSE session that the risk engine did not know about.
+    const state = getExchangeSession();
     return {
-      isOpen: isRegular,
+      isOpen: state.isOpen,
       exchange: 'NSE India',
-      session,
-      nextOpenIST: '09:15 IST (Next regular session)',
-      currentTimeIST: timeStr,
-      message
+      session: state.session,
+      currentTimeIST: `${state.clock.time} IST`,
+      dateIST: state.clock.date,
+      holidayCalendarConfigured: state.holidayCalendarConfigured,
+      message: state.message
     };
   }
 }
