@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    -- A disabled account cannot authenticate and its existing sessions are
+    -- rejected server-side (see src/lib/auth/session.ts + guard.ts).
+    is_disabled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -20,7 +23,10 @@ CREATE TABLE IF NOT EXISTS user_credentials (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     password_hash TEXT NOT NULL,
     password_updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    last_login_at TEXT
+    last_login_at TEXT,
+    -- Bumped on logout, password change or account disable. A stateless signed
+    -- session carries the value it was issued with; a mismatch revokes it.
+    token_version INTEGER NOT NULL DEFAULT 0
 );
 
 -- 2. User Settings & Control Modes
@@ -438,6 +444,9 @@ CREATE TABLE IF NOT EXISTS executions (
     gst REAL NOT NULL DEFAULT 0.0,
     total_charges REAL NOT NULL DEFAULT 0.0,
     net_amount REAL NOT NULL,
+    -- P&L booked by this fill. Zero for BUY; on SELL it is
+    -- (fill − average cost) × quantity − charges. Used by the daily-loss limit.
+    realised_pnl REAL NOT NULL DEFAULT 0.0,
     executed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -523,3 +532,27 @@ CREATE INDEX IF NOT EXISTS idx_market_data_asset_time ON market_data_points(asse
 CREATE INDEX IF NOT EXISTS idx_proposals_status ON investment_proposals(status);
 CREATE INDEX IF NOT EXISTS idx_decision_records_portfolio ON decision_records(portfolio_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_snapshots_portfolio_time ON portfolio_snapshots(portfolio_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_orders_portfolio_time ON orders(portfolio_id, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_executions_portfolio_time ON executions(portfolio_id, executed_at);
+-- 26. Idempotency Store for financial mutations
+-- A client-supplied (or server-derived) key is scoped to the authenticated
+-- user and the operation. Reusing a key with a different request body is
+-- rejected; replaying an identical request returns the stored result instead
+-- of executing twice. Rows expire after 24 hours (see src/lib/idempotency.ts).
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'IN_PROGRESS', -- 'IN_PROGRESS' | 'COMPLETED'
+    response_json TEXT,
+    status_code INTEGER,
+    resource_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    -- One key per (user, operation). Two different users may use the same
+    -- string; the same key string cannot be shared across operations.
+    PRIMARY KEY (user_id, scope, id)
+);
+CREATE INDEX IF NOT EXISTS idx_idempotency_expiry ON idempotency_keys(expires_at);

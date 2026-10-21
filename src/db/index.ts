@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { runMigrations } from './migrations';
 
 // Ensure data directory exists
 const DB_DIR = path.resolve(process.cwd(), 'data');
@@ -22,9 +23,27 @@ export function getDb(): Database.Database {
     _db.pragma('journal_mode = WAL');
     _db.pragma('foreign_keys = ON');
     _db.pragma('synchronous = NORMAL');
+    // Wait for a competing writer instead of failing immediately with
+    // SQLITE_BUSY. Financial writes rely on this to serialise correctly when
+    // more than one process (API + worker) touches the same database.
+    _db.pragma('busy_timeout = 5000');
     initSchema(_db);
+    runMigrations(_db);
   }
   return _db;
+}
+
+/**
+ * Opens a database without running the schema or migrations. Used only by the
+ * migration-safety test, so it can exercise an "old" database before it is
+ * upgraded.
+ */
+export function openDatabaseAt(filePath: string): Database.Database {
+  const handle = new Database(filePath);
+  handle.pragma('journal_mode = WAL');
+  handle.pragma('foreign_keys = ON');
+  handle.pragma('busy_timeout = 5000');
+  return handle;
 }
 
 export function initSchema(db: Database.Database) {
@@ -130,6 +149,24 @@ export const db = {
     const database = getDb();
     const runTx = database.transaction(() => fn(database));
     return runTx();
+  },
+  /**
+   * Runs a synchronous callback inside an IMMEDIATE transaction.
+   *
+   * Unlike the legacy deferred `transaction` helper this acquires the write
+   * lock up front, so a read made inside the callback cannot be invalidated by
+   * another writer before the corresponding write commits. Financial mutations
+   * MUST use this: a deferred transaction can upgrade to a write lock only if
+   * no other writer moved first, and SQLite then fails or (worse) the caller
+   * keeps using a snapshot read before the upgrade.
+   *
+   * Combined with `busy_timeout`, this serialises concurrent order execution
+   * across processes as well as within one Node process.
+   */
+  writeTransaction<T>(fn: (db: Database.Database) => T): T {
+    const database = getDb();
+    const runTx = database.transaction(() => fn(database));
+    return runTx.immediate();
   }
 };
 
