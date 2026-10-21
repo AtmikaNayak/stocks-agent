@@ -119,7 +119,7 @@ Run in this repository, on the commit that includes this document:
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Unit/integration suite | `npm test` | 23 files, 245 tests passing |
+| Unit/integration suite | `npm test` | 23 files, 248 tests passing |
 | Type check | `npm run typecheck` | clean |
 | Lint | `npm run lint` | 0 errors, 5 pre-existing hook warnings |
 | Production build | `npm run build` | succeeds |

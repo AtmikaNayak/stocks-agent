@@ -139,7 +139,11 @@ INVESTPILOT_TRUSTED_FUNDAMENTAL_SOURCES=""    # empty by default
 
 ## 🛡️ Risk-control matrix
 
-Every row is enforced in `src/lib/risk-engine.ts`, inside the execution transaction, against freshly read state. `UNAVAILABLE` is a third status: the control could not be measured and is **never** reported as a pass.
+All 18 checks below run in `src/lib/risk-engine.ts`, inside the execution transaction, against freshly read state.
+
+**17 of them can stop an order.** The eighteenth — maximum drawdown — is different in kind and is listed separately rather than being counted as enforced: it can only block once at least two NAV snapshots exist, and until then it reports `UNAVAILABLE`. `UNAVAILABLE` is a third status, not a pass: the control could not be measured, and the response says so. `tests/risk-engine.test.ts` asserts both halves of that contract.
+
+No HTTP route can skip a check. The only bypass switches in the codebase are `enforceTradingWindow: false`, used solely by the strategist when it drafts a proposal (advisory only — execution re-checks the window with it enforced), and `bypassMarketHours`, which defaults to false and is never set by a route.
 
 | Control | Formula / source | Fail-safe | Regression test |
 | --- | --- | --- | --- |
@@ -158,9 +162,18 @@ Every row is enforced in `src/lib/risk-engine.ts`, inside the execution transact
 | Portfolio exposure | `marketValueAfter / navAfter × 100 <= max_portfolio_exposure_pct` | Reject | `risk-engine.test.ts` |
 | Max risk per trade | `quantity × (price − stop)` where the stop is the active thesis stop, else a documented **10 % assumed adverse move** (`DEFAULT_ASSUMED_STOP_LOSS_PCT`); must be `<= max_risk_per_trade_pct %` of NAV | Reject | `risk-engine.test.ts` |
 | Daily loss | `SUM(executions.realised_pnl)` for the current **IST** date; a realised loss `>= max_daily_loss_limit` suspends new orders | Reject | `risk-engine.test.ts` |
-| Max drawdown | `(peakNav − navAfter) / peakNav × 100 <= max_drawdown_limit_pct`, peak from `portfolio_snapshots` | **UNAVAILABLE** (not a pass) until ≥ 2 snapshots exist; snapshots are written after every fill | `risk-engine.test.ts`, `execution-integrity.test.ts` |
-| Trading window | NSE continuous session 09:15–15:30 **Asia/Kolkata** on a trading day, then the portfolio's `trading_window_start/end` | Reject | `execution-integrity.test.ts` |
+| Trading window | NSE continuous session 09:15–15:30 **Asia/Kolkata** on a trading day, then the portfolio's `trading_window_start/end`; applied when `trading_schedule_enabled = 1` | Reject | `execution-integrity.test.ts` |
 | Proposal approval | status `APPROVED`, unexpired, matching portfolio/asset/side/quantity | Reject; re-checked inside the transaction | `execution-integrity.test.ts`, `agent-validation.test.ts` |
+
+### Max drawdown — measured conditionally, and labelled as such
+
+| State | Behaviour | Evidence |
+| --- | --- | --- |
+| Fewer than 2 NAV snapshots for the portfolio | `MAX_DRAWDOWN` is emitted with status **`UNAVAILABLE`** and does not by itself block the order | `risk-engine.test.ts` — "reports UNAVAILABLE, not PASS, when there is no NAV history" |
+| 2+ snapshots, measured drawdown within the limit | `PASS` | "passes once the measured drawdown is inside the limit" |
+| 2+ snapshots, measured drawdown over the limit | `FAIL` and the order is rejected | "blocks an order that would breach a measurable drawdown limit" |
+
+Snapshots are written after every fill, so a portfolio that has traded twice has history; a brand-new one does not. Until then the limit is **not** protecting the account, and the UI/report must say so rather than implying otherwise. The peak is `MAX(total_value)` over the portfolio's own snapshots — there is no invented baseline.
 
 ### Exchange calendar — an explicit gap
 
@@ -293,12 +306,12 @@ INVESTPILOT_DB_PATH=./restored.db npm run db:init
 npm test
 ```
 
-Current result: **23 test files, 245 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
+Current result: **23 test files, 248 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
 
 | Area | File |
 | --- | --- |
 | Concurrency, idempotency, CNC/MIS, oversell, rollback, quote validation, trading window | `tests/execution-integrity.test.ts` |
-| Risk limits and thresholds | `tests/risk-engine.test.ts` |
+| Risk limits and thresholds, incl. drawdown measured vs `UNAVAILABLE` (7) | `tests/risk-engine.test.ts` |
 | REAL/virtual isolation, forged prices, quantities | `tests/execution-isolation.test.ts` |
 | Sessions, revocation, disablement, CSRF, body hygiene (18) | `tests/session-lifecycle.test.ts` |
 | Authentication boundary, forged tokens, throttling | `tests/auth-session.test.ts`, `tests/login-rate-limit.test.ts` |

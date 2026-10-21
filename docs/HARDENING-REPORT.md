@@ -139,7 +139,7 @@ write, so it can no longer credit cash without moving shares.
 
 | # | Requirement | Status | Evidence / gap |
 | --- | --- | --- | --- |
-| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 245 tests |
+| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 248 tests |
 | 2 | Make order execution atomic | `COMPLETE` | `tests/execution-integrity.test.ts` (26) |
 | 3 | Eliminate stale-snapshot double spend | `COMPLETE` | Concurrent-execution test |
 | 4 | Product-type-correct positions (CNC/MIS) | `COMPLETE` | CNC-vs-MIS tests |
@@ -149,7 +149,7 @@ write, so it can no longer credit cash without moving shares.
 | 8 | Enforce every documented risk limit | `COMPLETE` | Risk matrix, §6 |
 | 9 | Risk per trade | `COMPLETE` | Stop-distance model; assumption documented |
 | 10 | Daily loss (per IST day, not lifetime) | `COMPLETE` | `executions.realised_pnl` + date filter |
-| 11 | Max drawdown | `UNAVAILABLE` | No NAV history in a fresh install; reported as `UNAVAILABLE`, never a pass |
+| 11 | Max drawdown | `PARTIAL` | Blocks once ≥ 2 NAV snapshots exist (proved by test). A brand-new portfolio has no peak to measure against, so it reports `UNAVAILABLE` and that limit does not protect the first few orders. |
 | 12 | Trading-hours / exchange calendar | `PARTIAL` | Session times, weekends, timezone and per-portfolio window enforced. **No holiday calendar ships** — NSE publishes it annually and inventing it would mis-gate orders. Configurable via `INVESTPILOT_TRADING_HOLIDAYS`; status is surfaced, not assumed. |
 | 13 | Trading-schedule control actually enforced in the execution path | `COMPLETE` | Enforced with the window on; generation-time assessment is explicitly advisory |
 | 14 | Product-type permissions (`allow_delivery` / `allow_intraday`) | `COMPLETE` | |
@@ -157,7 +157,7 @@ write, so it can no longer credit cash without moving shares.
 | 16 | `AUTONOMOUS_LIVE` / `AUTHORISED_LIVE` refused | `COMPLETE` | |
 | 17 | No client-supplied fill price | `COMPLETE` | 400 on `price` in body |
 | 18 | Quote validation before pricing | `COMPLETE` | Missing/NaN/≤0/stale/synthetic/unverified |
-| 19 | Session authentication on every route | `COMPLETE` | 13 routes; login is the only public one |
+| 19 | Session authentication on every route | `COMPLETE` | 13 route files. 11 require a verified session; `login` is public by necessity and `logout` is public but idempotent (it revokes whatever session is presented and writes no data otherwise). |
 | 20 | Session revocation | `COMPLETE` | `token_version`; logout and password change both bump it |
 | 21 | Disabled accounts refused | `COMPLETE` | Checked on every request, not only at login |
 | 22 | CSRF protection | `PARTIAL` | Three layers on all mutating routes. A request with **no** provenance headers is allowed (documented; not a browser vector). |
@@ -191,8 +191,12 @@ write, so it can no longer credit cash without moving shares.
 
 ## 6. Risk-control matrix
 
-Enforced inside the execution transaction, against freshly read state. `UNAVAILABLE`
-means the control could not be measured and is never reported as a pass.
+All 18 checks run inside the execution transaction, against freshly read state.
+
+**17 are enforced: they can stop an order.** The eighteenth, maximum drawdown,
+is not in the same category and is not counted as enforced — see the separate
+table below. `UNAVAILABLE` means the control could not be measured; it is never
+reported as a pass and never counted as protection.
 
 | Control | Basis | On failure | Status |
 | --- | --- | --- | --- |
@@ -211,9 +215,22 @@ means the control could not be measured and is never reported as a pass.
 | Portfolio exposure | post-trade market value % of NAV | Reject | Enforced |
 | Max risk per trade | `qty × (price − stop)`; thesis stop, else documented 10 % assumption | Reject | Enforced |
 | Daily loss | realised P&L for current IST date | Reject | Enforced |
-| Max drawdown | peak NAV from `portfolio_snapshots` | `UNAVAILABLE` until ≥ 2 snapshots | Reported, not faked |
-| Trading window | NSE 09:15–15:30 IST + portfolio window | Reject | Enforced; holidays configurable |
+| Trading window | NSE 09:15–15:30 IST + portfolio window (when `trading_schedule_enabled = 1`) | Reject | Enforced; holidays configurable, not shipped |
 | Proposal approval | status, expiry, portfolio/asset/side/qty match | Reject | Enforced and re-checked in-transaction |
+
+### Controls that are reported but not enforced
+
+| Control | When it cannot be enforced | What is reported | Evidence |
+| --- | --- | --- | --- |
+| Max drawdown | Fewer than 2 NAV snapshots exist for the portfolio (a brand-new portfolio has none) | `MAX_DRAWDOWN` with status `UNAVAILABLE` — measured, not passed | `tests/risk-engine.test.ts` (3 drawdown cases) |
+| Trading-window holidays | `INVESTPILOT_TRADING_HOLIDAYS` is unset (the default) | Weekends and session hours are enforced; public holidays are not, and the check says so | `tests/execution-integrity.test.ts` |
+
+The drawdown gap is real and matters: a new portfolio can trade its first few
+orders without any drawdown protection, because there is no recorded peak to
+measure against. It is stated here rather than being folded into the "enforced"
+count. No HTTP route can bypass any check: `enforceTradingWindow: false` is used
+only by the strategist when drafting a proposal, and execution re-evaluates with
+the window enforced; `bypassMarketHours` defaults to false and no route sets it.
 
 ## 7. Security summary
 
@@ -252,7 +269,7 @@ state.
 ```
 $ npm test
  Test Files  23 passed (23)
-      Tests  245 passed (245)
+      Tests  248 passed (248)
 
 $ npx tsc --noEmit
 (no output — clean)
@@ -270,7 +287,7 @@ $ npm audit
 9 vulnerabilities (2 moderate, 7 high)   # build-time only
 ```
 
-Baseline before this work: **17 files / 161 tests**. Net: **+6 files, +84 tests**.
+Baseline before this work: **17 files / 161 tests**. Net: **+6 files, +87 tests**.
 
 **Not proven by these numbers:** that the UI renders correctly, that keyboard and
 screen-reader navigation works, that CSRF is blocked in a real browser, or that
