@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import marketData from '@/lib/market-data';
 import db from '@/db';
 import { requireAuth } from '@/lib/auth/guard';
+import { providerRegistry } from '@/lib/market-data/providers';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,8 @@ export async function GET(request: Request) {
       fundamentals,
       candles,
       news,
-      session
+      session,
+      providers: providerRegistry.health()
     });
   }
 
