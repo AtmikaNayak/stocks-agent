@@ -198,12 +198,23 @@ export class InvestmentStrategistAgent {
     ]);
 
     // Deterministic Risk Assessment Check
+    // Advisory assessment only. The trading window is deliberately not enforced
+    // here: this proposal may be approved during a later session, and the
+    // execution path re-runs every check immediately before the trade.
     const riskCheck = evaluateProposalRisk({
       portfolioId,
       assetId,
       side: action,
       quantity: targetQuantity,
-      price: quote.price
+      price: quote.price,
+      productType: 'CNC',
+      orderCost: {
+        grossAmount: charges.turnover,
+        buyCashRequired: action === 'BUY' ? charges.netAmount : undefined,
+        sellCashProceeds: action === 'SELL' ? charges.netAmount : undefined,
+        totalCharges: charges.totalCharges
+      },
+      enforceTradingWindow: false
     });
 
     const riskAssessmentId = `risk_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;

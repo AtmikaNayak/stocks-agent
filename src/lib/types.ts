@@ -39,6 +39,8 @@ export type DataFreshness = 'LIVE' | 'DELAYED_15M' | 'EOD' | 'HISTORICAL' | 'SYN
 
 export interface IndianChargesBreakdown {
   turnover: number;
+  /** Fill price actually used by the simulator (quote price ± modelled slippage). */
+  effectivePrice: number;
   brokerage: number;
   stt: number;
   exchangeTurnoverCharges: number;
@@ -56,6 +58,12 @@ export interface RiskCheckResult {
   checks: {
     ruleName: string;
     passed: boolean;
+    /**
+     * 'PASS' / 'FAIL' for an evaluated control. 'UNAVAILABLE' means the control
+     * could not be measured (for example, drawdown without NAV history) and is
+     * never silently reported as a pass in the UI.
+     */
+    status?: 'PASS' | 'FAIL' | 'UNAVAILABLE';
     currentValue: number | string;
     limitValue: number | string;
     description: string;
