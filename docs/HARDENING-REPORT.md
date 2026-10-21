@@ -185,7 +185,7 @@ write, so it can no longer credit cash without moving shares.
 | 44 | CI verifies typecheck, lint, tests, build, audit | `COMPLETE` | Workflow updated accordingly |
 | 45 | Broken npm scripts repaired | `COMPLETE` | `db:init` (missing file) and `lint` (removed `next lint`) |
 | 46 | Documentation matches behaviour | `COMPLETE` | README rewritten against the code |
-| 47 | Isolated hardening branch | `PARTIAL` | All commits on `arena/de0ec973-stocks-agent`; see §2 deviation |
+| 47 | Isolated hardening branch | `PARTIAL` | Work is isolated on `arena/de0ec973-stocks-agent` (base untouched, published as a new remote branch). The requested name `hardening/financial-integrity` was not created: the platform pin forbids it, so a bundle + patch export is provided instead. See §10. |
 | 48 | Independent security audit | `NOT APPLICABLE` | Only source review and automated checks were performed; see `docs/SECURITY-REVIEW.md` |
 | 49 | Deployment / production readiness | `NOT APPLICABLE` | Out of scope; the app is not safe to expose publicly |
 
@@ -311,16 +311,37 @@ any strategy is profitable. No manual exploratory testing session is claimed.
 
 | Item | Value |
 | --- | --- |
-| Base commit | `417e2ec` |
-| Base branch | untouched |
+| Base commit (verified) | `417e2ec2f690c41e87249365ed65a1aadb788e9c` |
+| Base is an ancestor of the tip | yes — `git merge-base --is-ancestor` succeeds |
+| Base branch (`investpilot3.0`) | untouched, still at `417e2ec` |
+| `safety/agent-validation-first` | untouched, still at `417e2ec` |
+| PR #3 (`safety/agent-validation-first` → `arena/703c77fd-stocks-agent`) | untouched: still open, still draft, head and base unchanged |
 | Working branch | `arena/de0ec973-stocks-agent` |
-| Commits added | Twelve from `3dbb736` to `e07f652`, plus documentation-only commits after that |
+| Published | yes — pushed as a **new** remote branch; the SHA is in the delivery message and at `git ls-remote origin refs/heads/arena/de0ec973-stocks-agent` |
 | Force-push | none |
-| History rewrite | none |
+| History rewrite / squash | none |
 | Branch deletion | none |
-| PR state change | none (PR #3 untouched) |
+| PR created / merged / closed / retargeted / marked ready | none |
 | Staging | explicit paths only |
-| Secrets / `.env` / DB / build artefacts committed | none |
+| Secrets / real `.env` / database files / backups / build artefacts committed | none (`data/investpilot.db` is not in this branch's diff; `.env.example` carries only empty placeholders) |
+
+**Branch name deviation, restated.** The brief asked for
+`hardening/financial-integrity`. This session is pinned by the platform to
+`arena/de0ec973-stocks-agent`, and that pin forbids creating or pushing a
+differently named branch. The work was therefore published under the pinned name,
+and a self-contained git bundle plus a 16-patch series are provided alongside it
+so a reviewer can create `hardening/financial-integrity` locally with the exact
+same commit history:
+
+```bash
+git clone <bundle> hardening-financial-integrity
+cd hardening-financial-integrity
+git switch -c hardening/financial-integrity
+git rev-parse HEAD    # equals the published tip
+```
+
+That is a faithful export, not a second publication: nothing was pushed under the
+`hardening/` name.
 
 ## 11. Outstanding checklist
 
