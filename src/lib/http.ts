@@ -10,6 +10,42 @@ import { AppError } from './errors';
 
 export const MAX_JSON_BODY_BYTES = 16_384;
 
+/**
+ * Reads a request body with a hard byte cap.
+ *
+ * `request.text()` buffers the entire body before any length check can run, so
+ * a single client could make the server allocate arbitrarily large strings.
+ * This reads the stream chunk by chunk and cancels as soon as the cap is
+ * exceeded. The declared Content-Length is checked first as a cheap rejection.
+ */
+async function readBodyWithLimit(request: Request, maxBytes: number): Promise<string> {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new AppError('Request body is too large.', 413, 'PAYLOAD_TOO_LARGE');
+  }
+
+  if (!request.body) return '';
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new AppError('Request body is too large.', 413, 'PAYLOAD_TOO_LARGE');
+    }
+    chunks.push(value);
+  }
+
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8');
+}
+
 /** Rejects non-JSON, oversized and malformed bodies before they are parsed. */
 export async function readJsonBody(
   request: Request,
@@ -21,10 +57,7 @@ export async function readJsonBody(
     throw new AppError('Content-Type must be application/json.', 415, 'UNSUPPORTED_MEDIA_TYPE');
   }
 
-  const raw = await request.text();
-  if (raw.length > maxBytes) {
-    throw new AppError('Request body is too large.', 413, 'PAYLOAD_TOO_LARGE');
-  }
+  const raw = await readBodyWithLimit(request, maxBytes);
   if (raw.trim() === '') {
     throw new AppError('A JSON body is required.', 400, 'EMPTY_BODY');
   }

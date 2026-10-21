@@ -266,3 +266,49 @@ describe('mutating request hygiene', () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe('unauthenticated login body hygiene', () => {
+  /**
+   * The login route used `request.json()`, which buffered any size of body and
+   * skipped the content-type check that every other write endpoint applies. It
+   * is the one endpoint an unauthenticated client can reach, so it is the one
+   * that most needs the bound.
+   */
+  function loginRequest(init: { headers?: Record<string, string>; body?: string }) {
+    return new Request(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+      body: init.body ?? '{}'
+    });
+  }
+
+  it('rejects an oversized body with 413', async () => {
+    const response = await postLogin(
+      loginRequest({ body: JSON.stringify({ email: 'a@b.c', padding: 'x'.repeat(20_000) }) })
+    );
+    expect(response.status).toBe(413);
+  });
+
+  it('rejects a non-JSON content type with 415', async () => {
+    const response = await postLogin(
+      loginRequest({
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'email=a@b.c&password=x'
+      })
+    );
+    expect(response.status).toBe(415);
+  });
+
+  it('rejects malformed JSON with 400', async () => {
+    const response = await postLogin(loginRequest({ body: '{"email":' }));
+    expect(response.status).toBe(400);
+  });
+
+  it('does not issue a cookie for a failed sign-in', async () => {
+    const response = await postLogin(
+      loginRequest({ body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong-password' }) })
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+});

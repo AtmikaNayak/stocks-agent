@@ -8,7 +8,9 @@ import {
   sessionTtlSeconds
 } from '@/lib/auth/session';
 import { jsonError, requireSameOrigin } from '@/lib/auth/guard';
+import { AppError } from '@/lib/errors';
 import { getLoginThrottle, trustedClientIp } from '@/lib/auth/rate-limit';
+import { readJsonBody } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,13 +44,18 @@ export async function POST(request: Request) {
   const sameOrigin = requireSameOrigin(request);
   if (!sameOrigin.ok) return sameOrigin.response;
 
-  let body: unknown;
+  // The unauthenticated endpoint is the one most worth bounding: it previously
+  // called request.json(), which buffered an arbitrarily large body and skipped
+  // the content-type and size checks every other write endpoint applies.
+  let body: Record<string, unknown>;
   try {
-    body = await request.json();
-  } catch {
+    body = await readJsonBody(request);
+  } catch (err) {
+    if (err instanceof AppError) {
+      return jsonError(err.message, err.statusCode);
+    }
     return jsonError('A JSON body is required.', 400);
   }
-  if (!body || typeof body !== 'object') return jsonError('A JSON body is required.', 400);
 
   const { email, password } = body as { email?: unknown; password?: unknown };
   if (typeof email !== 'string' || email.trim() === '' || email.length > 320) {
