@@ -105,9 +105,21 @@ describe('Backtest input validation', () => {
     ).rejects.toThrow(/brokeragePerTrade/);
   });
 
-  it('fails loudly when no usable candles exist rather than returning zeros', async () => {
+  it('rejects an unknown symbol instead of silently skipping it', async () => {
+    // Silently dropping an unknown symbol would report results for a universe
+    // the caller never asked for.
     await expect(
-      backtestEngine.runBacktest({ ...baseInput, assetSymbols: ['NOT_A_REAL_SYMBOL'] })
+      backtestEngine.runBacktest({ ...baseInput, assetSymbols: ['ZZZUNKNOWN'] })
+    ).rejects.toThrow(/unknown symbols/i);
+  });
+
+  it('fails loudly when no usable candles exist rather than returning zeros', async () => {
+    db.execute(
+      `INSERT OR IGNORE INTO assets (id, symbol, name, exchange, sector, is_tradable)
+       VALUES ('ast_bt_nocandles', 'NOCANDLES', 'No Candles Ltd', 'NSE', 'Testing', 0)`
+    );
+    await expect(
+      backtestEngine.runBacktest({ ...baseInput, assetSymbols: ['NOCANDLES'] })
     ).rejects.toThrow(/no trades/i);
   });
 });

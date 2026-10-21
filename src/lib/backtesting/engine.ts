@@ -1,7 +1,12 @@
 import db from '../../db';
 import { calculateIndianCharges } from '../tax-calculator';
 import { describeQuoteProvenance, isSyntheticSource } from '../data-provenance';
-import { requireFiniteNumber, requireNonEmptyString, requireStringArray } from '../validation';
+import {
+  requireFiniteNumber,
+  requireNonEmptyString,
+  requireBoundedSymbolArray,
+  ValidationError
+} from '../validation';
 
 export interface BacktestInput {
   strategyVersionId: string;
@@ -40,6 +45,8 @@ export interface BacktestOutput {
     isSynthetic: boolean;
     providers: string[];
     candles: number;
+    /** Candles rejected for malformed or non-positive values. Never repaired. */
+    quarantinedCandles: number;
     startDate: string | null;
     endDate: string | null;
     disclosure: string;
@@ -58,22 +65,79 @@ export interface BacktestOutput {
 /** Minimum trade count before annualised ratios are reported at all. */
 const MIN_TRADES_FOR_RATIOS = 20;
 
+/** Explicit resource bounds. A caller cannot make the engine do unbounded work. */
+export const MAX_SYMBOLS_PER_BACKTEST = 20;
+export const MAX_CANDLES_PER_SYMBOL = 5_000;
+export const MAX_TRADES = 5_000;
+const MAX_INITIAL_CAPITAL = 100_000_000;
+const MAX_SLIPPAGE_PCT = 5;
+const MAX_BROKERAGE_PER_TRADE = 10_000;
+
+/** One candle is valid only when every value is usable. Nothing is repaired. */
+export function isUsableCandle(candle: {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  timestamp?: string;
+}): boolean {
+  const open = Number(candle.open);
+  const high = Number(candle.high);
+  const low = Number(candle.low);
+  const close = Number(candle.close);
+  const volume = Number(candle.volume);
+  if (![open, high, low, close].every((value) => Number.isFinite(value) && value > 0)) return false;
+  if (!Number.isFinite(volume) || volume < 0) return false;
+  if (high + 0.01 < low) return false;
+  if (high + 0.01 < Math.max(open, close)) return false;
+  if (low - 0.01 > Math.min(open, close)) return false;
+  if (candle.timestamp && !Number.isFinite(Date.parse(candle.timestamp))) return false;
+  return true;
+}
+
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
 export class BacktestEngine {
   async runBacktest(input: BacktestInput): Promise<BacktestOutput> {
     const strategyVersionId = requireNonEmptyString(input?.strategyVersionId, 'strategyVersionId');
-    const assetSymbols = requireStringArray(input?.assetSymbols, 'assetSymbols');
+    const assetSymbols = requireBoundedSymbolArray(input?.assetSymbols, 'assetSymbols', {
+      maxItems: MAX_SYMBOLS_PER_BACKTEST
+    });
+
+    // The requested strategy version must exist; silently substituting the
+    // default would report results for a strategy nobody asked for.
+    const strategy = db.queryOne<{ id: string }>('SELECT id FROM strategy_versions WHERE id = ?', [
+      strategyVersionId
+    ]);
+    if (!strategy) {
+      throw new ValidationError(`Unknown strategy version: ${strategyVersionId}.`);
+    }
 
     const initialCapital = requireFiniteNumber(input?.initialCapital ?? 25000, 'initialCapital', {
       min: 1000,
-      exclusiveMin: true
+      exclusiveMin: true,
+      max: MAX_INITIAL_CAPITAL
     });
-    const slippagePct = requireFiniteNumber(input?.slippagePct ?? 0.05, 'slippagePct', { min: 0, max: 100 });
+    const slippagePct = requireFiniteNumber(input?.slippagePct ?? 0.05, 'slippagePct', {
+      min: 0,
+      max: MAX_SLIPPAGE_PCT
+    });
     const brokeragePerTrade = requireFiniteNumber(input?.brokeragePerTrade ?? 20, 'brokeragePerTrade', {
       min: 0,
-      max: 10000
+      max: MAX_BROKERAGE_PER_TRADE
     });
+
+    // Unknown symbols are an input error, not something to skip quietly.
+    const knownSymbols = new Set(
+      db
+        .query<{ symbol: string }>('SELECT symbol FROM assets')
+        .map((row) => row.symbol.toUpperCase())
+    );
+    const unknown = assetSymbols.filter((symbol) => !knownSymbols.has(symbol));
+    if (unknown.length > 0) {
+      throw new ValidationError(`Unknown symbols: ${unknown.join(', ')}.`);
+    }
 
     let capital = initialCapital;
     let peakCapital = initialCapital;
@@ -85,6 +149,7 @@ export class BacktestEngine {
     const providers = new Set<string>();
     let candlesAnalysed = 0;
     let syntheticCandles = 0;
+    let quarantinedCandles = 0;
     let firstDate: string | null = null;
     let lastDate: string | null = null;
 
@@ -104,13 +169,20 @@ export class BacktestEngine {
         freshness_status: string | null;
       }>(
         `SELECT timestamp, open, high, low, close, volume, provider, freshness_status
-         FROM market_data_points WHERE asset_id = ? ORDER BY timestamp ASC`,
-        [asset.id]
+         FROM market_data_points WHERE asset_id = ? ORDER BY timestamp ASC LIMIT ?`,
+        [asset.id, MAX_CANDLES_PER_SYMBOL]
       );
 
       if (candles.length < 5) continue;
 
-      for (const candle of candles) {
+      const usable = candles.filter((candle) => {
+        const ok = isUsableCandle(candle);
+        if (!ok) quarantinedCandles += 1;
+        return ok;
+      });
+      if (usable.length < 5) continue;
+
+      for (const candle of usable) {
         const close = Number(candle.close);
         if (!Number.isFinite(close) || close <= 0) continue;
         candlesAnalysed += 1;
@@ -124,10 +196,20 @@ export class BacktestEngine {
         lastDate = candle.timestamp;
       }
 
-      // Decision at candle T close, execution modelled on the next candle's close.
-      for (let i = 2; i < candles.length - 2; i += 3) {
-        const entryCandle = candles[i];
-        const exitCandle = candles[Math.min(candles.length - 1, i + 2)];
+      // Decision is made from candle i (its close is the last information
+      // available), but entry is modelled at the NEXT candle's close — trading
+      // at the price you just used to decide would be look-ahead bias.
+      for (let i = 2; i < usable.length - 4; i += 3) {
+        if (trades.length >= MAX_TRADES) break;
+        const decisionCandle = usable[i];
+        const entryCandle = usable[i + 1];
+        const exitCandle = usable[Math.min(usable.length - 1, i + 3)];
+
+        // A decision that needs data beyond the candle must see only the past.
+        if (Date.parse(decisionCandle.timestamp) >= Date.parse(entryCandle.timestamp)) {
+          quarantinedCandles += 1;
+          continue;
+        }
 
         const entryPrice = Number(entryCandle.close);
         const exitPrice = Number(exitCandle.close);
@@ -249,6 +331,9 @@ export class BacktestEngine {
     const disclosure = isSynthetic
       ? `All ${candlesAnalysed} candles came from synthetic demo fixtures (${[...providers].join(', ') || 'unknown provider'}). Results show simulator mechanics only and are not evidence of strategy performance.`
       : `Candles came from ${[...providers].join(', ') || 'an unrecognised provider'}. No out-of-sample validation was performed.`;
+    const quarantineNote = quarantinedCandles > 0
+      ? ` ${quarantinedCandles} malformed candle(s) were quarantined and excluded rather than repaired.`
+      : '';
 
     const backtestId = `bt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -290,7 +375,8 @@ export class BacktestEngine {
         outOfSampleTested: false,
         isSynthetic,
         providers: [...providers],
-        disclosure
+        quarantinedCandles,
+        disclosure: disclosure + quarantineNote
       })
     ]);
 
@@ -316,9 +402,10 @@ export class BacktestEngine {
         isSynthetic,
         providers: [...providers],
         candles: candlesAnalysed,
+        quarantinedCandles,
         startDate: firstDate,
         endDate: lastDate,
-        disclosure
+        disclosure: disclosure + quarantineNote
       },
       trades: trades.slice(0, 15)
     };

@@ -55,6 +55,52 @@ export function requireEnum<T extends string>(value: unknown, field: string, all
   return value as T;
 }
 
+/**
+ * A bounded, sanitised list of symbols.
+ *
+ * An unbounded array is an easy way to make the server do arbitrary work, so
+ * the count and each entry's length/shape are enforced here rather than left to
+ * the caller.
+ */
+export function requireBoundedSymbolArray(
+  value: unknown,
+  field: string,
+  options: { maxItems?: number; maxLength?: number } = {}
+): string[] {
+  const maxItems = options.maxItems ?? 25;
+  const maxLength = options.maxLength ?? 20;
+  if (!Array.isArray(value)) {
+    throw new ValidationError(`${field} must be an array of symbols.`);
+  }
+  if (value.length === 0) {
+    throw new ValidationError(`${field} must contain at least one symbol.`);
+  }
+  if (value.length > maxItems) {
+    throw new ValidationError(`${field} may contain at most ${maxItems} symbols.`);
+  }
+  const seen = new Set<string>();
+  return value.map((item, index) => {
+    if (typeof item !== 'string') {
+      throw new ValidationError(`${field}[${index}] must be a string.`);
+    }
+    const symbol = item.trim().toUpperCase();
+    if (symbol === '') {
+      throw new ValidationError(`${field}[${index}] must not be empty.`);
+    }
+    if (symbol.length > maxLength) {
+      throw new ValidationError(`${field}[${index}] is longer than ${maxLength} characters.`);
+    }
+    if (!/^[A-Z0-9][A-Z0-9.&-]*$/.test(symbol)) {
+      throw new ValidationError(`${field}[${index}] contains characters that are not valid in a symbol.`);
+    }
+    if (seen.has(symbol)) {
+      throw new ValidationError(`${field}[${index}] duplicates ${symbol}.`);
+    }
+    seen.add(symbol);
+    return symbol;
+  });
+}
+
 export function requireStringArray(value: unknown, field: string): string[] {
   if (!Array.isArray(value) || value.length === 0) {
     throw new ValidationError(`${field} must be a non-empty array of symbols.`);
