@@ -146,7 +146,7 @@ write, so it can no longer credit cash without moving shares.
 | 5 | Prevent negative cash including charges | `COMPLETE` | Charge-aware cash test |
 | 6 | Idempotent order submission | `COMPLETE` | Replay, conflict, in-flight tests |
 | 7 | Atomic proposal lifecycle | `COMPLETE` | `PROPOSAL_NOT_EXECUTABLE` tests |
-| 8 | Enforce every documented risk limit | `COMPLETE` | Risk matrix, §6 |
+| 8 | Enforce every documented risk limit | `PARTIAL` | 17 of 18 checks can stop an order (§6). Maximum drawdown is conditional — see row 11. |
 | 9 | Risk per trade | `COMPLETE` | Stop-distance model; assumption documented |
 | 10 | Daily loss (per IST day, not lifetime) | `COMPLETE` | `executions.realised_pnl` + date filter |
 | 11 | Max drawdown | `PARTIAL` | Blocks once ≥ 2 NAV snapshots exist (proved by test). A brand-new portfolio has no peak to measure against, so it reports `UNAVAILABLE` and that limit does not protect the first few orders. |
@@ -156,7 +156,7 @@ write, so it can no longer credit cash without moving shares.
 | 15 | REAL portfolio cannot trade | `COMPLETE` | Rejected before any write, 403 |
 | 16 | `AUTONOMOUS_LIVE` / `AUTHORISED_LIVE` refused | `COMPLETE` | |
 | 17 | No client-supplied fill price | `COMPLETE` | 400 on `price` in body |
-| 18 | Quote validation before pricing | `COMPLETE` | Missing/NaN/≤0/stale/synthetic/unverified |
+| 18 | Quote validation before pricing | `COMPLETE` | Rejects missing, non-finite, non-positive or OHLC-inconsistent prices, unknown freshness, `STALE`/`HISTORICAL` quotes and future-dated timestamps (`src/lib/market-data/validation.ts`). Synthetic fixtures remain usable to price a **simulated** fill by design; the provenance layer marks such a proposal `isActionable: false`. No provider allowlist is enforced at the execution boundary. |
 | 19 | Session authentication on every route | `COMPLETE` | 13 route files. 11 require a verified session; `login` is public by necessity and `logout` is public but idempotent (it revokes whatever session is presented and writes no data otherwise). |
 | 20 | Session revocation | `COMPLETE` | `token_version`; logout and password change both bump it |
 | 21 | Disabled accounts refused | `COMPLETE` | Checked on every request, not only at login |
@@ -287,7 +287,21 @@ $ npm audit
 9 vulnerabilities (2 moderate, 7 high)   # build-time only
 ```
 
-Baseline before this work: **17 files / 161 tests**. Net: **+6 files, +87 tests**.
+Baseline before this work: **17 files / 161 tests**. Net: **+6 files / +87 tests**
+(23 files, 248 tests).
+
+**Runtime smoke test** (production build, `next start`, isolated throwaway
+database, then the server was stopped and the file deleted):
+
+| Request | Observed |
+| --- | --- |
+| `GET /` | `200` |
+| `GET /api/orders` with no cookie | `401` |
+| `GET /api/auth/session` with no cookie | `401` |
+| `POST /api/auth/login` with `Origin: https://evil.example` + `Sec-Fetch-Site: cross-site` | `403` |
+| `POST /api/auth/login` with a 20 KB body | `413` |
+| `POST /api/auth/login` with `content-type: application/x-www-form-urlencoded` | `415` |
+| Response headers on `/` | CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`; **no** `Access-Control-Allow-Origin` |
 
 **Not proven by these numbers:** that the UI renders correctly, that keyboard and
 screen-reader navigation works, that CSRF is blocked in a real browser, or that
