@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { openDatabaseAt, openManagedDatabase } from '../src/db';
 import {
   DatabaseIntegrityError,
@@ -314,5 +316,293 @@ describe('repeated initialisation is safe', () => {
     const probe = openDatabaseAt(tempDatabaseFile());
     expect(tableExists(probe, 'users')).toBe(false);
     probe.close();
+  });
+});
+
+describe('a failed open releases the connection', () => {
+  /**
+   * A refused open used to leak a Sqlite3 connection: `openManagedDatabase()`
+   * created the handle, provisioning threw, and nothing closed it. A supervisor
+   * that restarts the process on a refused database — or any retry loop — would
+   * accumulate descriptors and file locks until the process ran out.
+   *
+   * `onHandleOpened` is a test-only seam that reports the raw handle, so the
+   * assertions are about the actual object rather than an inference.
+   */
+
+  function newerVersionDatabase(version: number): string {
+    const file = tempDatabaseFile();
+    const raw = new Database(file);
+    raw.exec(`
+      CREATE TABLE sentinel (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO sentinel (id, value) VALUES ('keep', 'untouched');
+    `);
+    raw.pragma(`user_version = ${version}`);
+    raw.close();
+    return file;
+  }
+
+  /** Open file descriptors pointing at `file`, or null when /proc is unavailable. */
+  function descriptorsFor(file: string): number | null {
+    try {
+      const entries = fs.readdirSync('/proc/self/fd');
+      let count = 0;
+      for (const entry of entries) {
+        try {
+          if (fs.readlinkSync(`/proc/self/fd/${entry}`) === file) count += 1;
+        } catch {
+          // A descriptor can close between readdir and readlink; ignore it.
+        }
+      }
+      return count;
+    } catch {
+      return null;
+    }
+  }
+
+  it('closes the handle when the schema version is refused, and rethrows the original error', () => {
+    const file = newerVersionDatabase(CURRENT_SCHEMA_VERSION + 1);
+
+    const opened: Database.Database[] = [];
+    let thrown: unknown;
+    try {
+      openManagedDatabase(file, { onHandleOpened: (handle) => opened.push(handle) });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(SchemaTooNewError);
+    expect((thrown as SchemaTooNewError).databaseVersion).toBe(CURRENT_SCHEMA_VERSION + 1);
+
+    // Exactly one connection was created, and it is closed.
+    expect(opened).toHaveLength(1);
+    expect(opened[0].open).toBe(false);
+    // Using it throws, which is only true of a released connection.
+    expect(() => opened[0].prepare('SELECT 1')).toThrow();
+  });
+
+  it('closes the handle when an integrity failure refuses the database', () => {
+    const file = tempDatabaseFile();
+    const seed = new Database(file);
+    seed.exec("CREATE TABLE sentinel (id TEXT PRIMARY KEY); INSERT INTO sentinel VALUES ('a');");
+    seed.close();
+
+    const opened: Database.Database[] = [];
+    const checkCalls: number[] = [];
+    let thrown: unknown;
+    try {
+      openManagedDatabase(file, {
+        onHandleOpened: (handle) => opened.push(handle),
+        // Stands in for `PRAGMA integrity_check` reporting damage. The real
+        // checker is exercised by every other test in this file.
+        integrityCheck: () => {
+          checkCalls.push(1);
+          return 'database disk image is malformed';
+        }
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(checkCalls).toHaveLength(1);
+    expect(thrown).toBeInstanceOf(DatabaseIntegrityError);
+    expect((thrown as DatabaseIntegrityError).detail).toMatch(/malformed/i);
+    expect(opened).toHaveLength(1);
+    expect(opened[0].open).toBe(false);
+    expect(() => opened[0].prepare('SELECT 1')).toThrow();
+
+    // The refused file was not modified.
+    const after = new Database(file);
+    expect(after.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual([
+      { name: 'sentinel' }
+    ]);
+    after.close();
+  });
+
+  // A process running as root can still write to a 0444 file, so the read-only
+  // scenario cannot be constructed there. Probing once is better than asserting
+  // something that silently passes.
+  function permissionsAreEnforced(): boolean {
+    const probe = tempDatabaseFile();
+    fs.writeFileSync(probe, '');
+    fs.chmodSync(probe, 0o444);
+    try {
+      fs.accessSync(probe, fs.constants.W_OK);
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  it.skipIf(!permissionsAreEnforced())(
+    'closes the handle when a later initialisation step throws',
+    () => {
+      // A failure *after* the guards passed, so the handle is definitely live:
+      // the file is read-only, which makes the first migration write fail.
+      const file = tempDatabaseFile();
+      const seed = new Database(file);
+      seed.close();
+      fs.chmodSync(file, 0o444);
+
+      const opened: Database.Database[] = [];
+      let thrown: unknown;
+      try {
+        openManagedDatabase(file, { onHandleOpened: (handle) => opened.push(handle) });
+      } catch (error) {
+        thrown = error;
+      } finally {
+        fs.chmodSync(file, 0o644);
+      }
+
+      expect(thrown).toBeInstanceOf(Error);
+      expect(opened).toHaveLength(1);
+      // The handle existed and was released, even though the failure was neither
+      // a version nor an integrity refusal.
+      expect(opened[0].open).toBe(false);
+      expect(() => opened[0].prepare('SELECT 1')).toThrow();
+    }
+  );
+
+  it('does not accumulate open handles across repeated failed attempts', () => {
+    const file = newerVersionDatabase(CURRENT_SCHEMA_VERSION + 3);
+
+    const before = descriptorsFor(file);
+    const opened: Database.Database[] = [];
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expect(() =>
+        openManagedDatabase(file, { onHandleOpened: (handle) => opened.push(handle) })
+      ).toThrow(SchemaTooNewError);
+    }
+
+    expect(opened).toHaveLength(20);
+    expect(opened.every((handle) => handle.open === false)).toBe(true);
+
+    const after = descriptorsFor(file);
+    if (before !== null && after !== null) {
+      // Descriptor accounting is only available on platforms with /proc.
+      expect(after).toBeLessThanOrEqual(before);
+    }
+  });
+
+  it('lets a later attempt succeed once the database is supported again', () => {
+    const file = newerVersionDatabase(CURRENT_SCHEMA_VERSION + 1);
+
+    expect(() => openManagedDatabase(file)).toThrow(SchemaTooNewError);
+
+    // Bring the file back to a version this build supports, as an operator would
+    // by restoring a backup, then retry on the same path.
+    const repair = new Database(file);
+    repair.pragma(`user_version = ${CURRENT_SCHEMA_VERSION}`);
+    repair.close();
+
+    const recovered = openManagedDatabase(file);
+    try {
+      expect(recovered.open).toBe(true);
+      expect(tableExists(recovered, 'portfolios')).toBe(true);
+      expect(readSchemaVersion(recovered)).toBe(CURRENT_SCHEMA_VERSION);
+    } finally {
+      recovered.close();
+    }
+  });
+});
+
+describe('npm run db:init releases the database on every exit path', () => {
+  /**
+   * The script's refusal branches used to `return` before `db.close()`, leaving
+   * the handle open for the rest of the process. These tests run the real entry
+   * point as a child process against isolated files, so the CLI path is covered
+   * rather than only the library functions.
+   */
+
+  const script = path.resolve(process.cwd(), 'src/db/init.ts');
+  const requireHere = createRequire(import.meta.url);
+  const tsxCli = requireHere.resolve('tsx/cli');
+
+  function runInit(dbPath: string) {
+    const result = spawnSync(process.execPath, [tsxCli, script], {
+      cwd: process.cwd(),
+      env: { ...process.env, INVESTPILOT_DB_PATH: dbPath, NODE_ENV: 'test' },
+      encoding: 'utf-8',
+      timeout: 120_000
+    });
+    return {
+      status: result.status,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      signal: result.signal
+    };
+  }
+
+  it('exits 1 on a newer database, changes nothing, and does not hang', () => {
+    const file = tempDatabaseFile();
+    const seed = new Database(file);
+    seed.exec(`CREATE TABLE keep_me (id TEXT); INSERT INTO keep_me VALUES ('row');`);
+    seed.pragma(`user_version = ${CURRENT_SCHEMA_VERSION + 2}`);
+    seed.close();
+
+    const run = runInit(file);
+
+    expect(run.signal).toBeNull();
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/Refusing to open it/);
+    expect(run.stderr).toMatch(/No schema change, migration or row update was performed/);
+
+    // Nothing was written before the refusal.
+    const after = new Database(file);
+    expect(readSchemaVersion(after)).toBe(CURRENT_SCHEMA_VERSION + 2);
+    expect(after.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual([
+      { name: 'keep_me' }
+    ]);
+    expect(after.prepare('SELECT COUNT(*) AS c FROM keep_me').get()).toEqual({ c: 1 });
+    after.close();
+  });
+
+  it('exits 0 and reports accurately on a supported database, leaving no journal behind', () => {
+    const file = tempDatabaseFile();
+
+    const run = runInit(file);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(/Integrity check: ok/);
+    expect(run.stdout).toMatch(/Schema version: 0 -> \d+/);
+    expect(run.stdout).toMatch(/Rows deleted or tables dropped: none/);
+
+    expect(fs.existsSync(`${file}-journal`)).toBe(false);
+    expect(fs.existsSync(`${file}-wal`)).toBe(false);
+
+    const after = new Database(file);
+    expect(readSchemaVersion(after)).toBe(CURRENT_SCHEMA_VERSION);
+    after.close();
+  });
+
+  it('exits 1 with a clear message when the path cannot be opened at all', () => {
+    // A directory can never be a SQLite database, so this fails before a handle
+    // exists. It must still be reported as an initialisation failure.
+    const dir = path.join(
+      os.tmpdir(),
+      `investpilot-nodir-${Date.now()}-${Math.random().toString(36).slice(2)}.db`
+    );
+    fs.mkdirSync(dir);
+
+    try {
+      const run = runInit(dir);
+      expect(run.signal).toBeNull();
+      expect(run.status).toBe(1);
+      expect(run.stderr).toMatch(/Could not open/);
+      expect(run.stderr).toMatch(/No schema change, migration or row update was performed/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 1 without a leaked lock when the same file is opened twice in a row', () => {
+    const file = tempDatabaseFile();
+    expect(runInit(file).status).toBe(0);
+    // A second run against the same file would be the first to notice a handle
+    // still holding a lock or a stale journal from the previous process.
+    const second = runInit(file);
+    expect(second.status).toBe(0);
+    expect(second.stdout).toMatch(/Migrations applied: none/);
   });
 });

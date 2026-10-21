@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { provisionDatabase } from './provision';
+import type { IntegrityChecker } from './provision';
 
 export {
   SchemaTooNewError,
@@ -10,6 +11,7 @@ export {
   readSchemaVersion,
   assertSupportedSchemaVersion
 } from './provision';
+export type { IntegrityChecker } from './provision';
 
 // Ensure data directory exists
 const DB_DIR = path.resolve(process.cwd(), 'data');
@@ -40,21 +42,65 @@ let _db: Database.Database | null = null;
  * and with no version guard at all. Startup now never rewrites existing rows;
  * once-only data corrections live in migration v6.
  */
-export function openManagedDatabase(filePath: string): Database.Database {
+/**
+ * Closes a connection without letting a close failure replace the error that is
+ * already propagating. A handle that is already closed, or that was never
+ * successfully opened, is not an error worth surfacing.
+ */
+function closeQuietly(handle: Database.Database | null | undefined): void {
+  if (!handle) return;
+  try {
+    if (handle.open) handle.close();
+  } catch {
+    // The caller is rethrowing the original failure; a secondary close error
+    // must not mask it.
+  }
+}
+
+export interface OpenManagedDatabaseOptions {
+  /**
+   * Test-only seam: reports each raw handle immediately after it is created, so
+   * a test can assert the handle was closed when provisioning failed. It cannot
+   * affect provisioning.
+   */
+  onHandleOpened?: (handle: Database.Database) => void;
+  /**
+   * Test-only seam, forwarded to `provisionDatabase()`. Production callers do not
+   * set it, so the real `PRAGMA integrity_check` always runs in the application.
+   */
+  integrityCheck?: IntegrityChecker;
+}
+
+export function openManagedDatabase(
+  filePath: string,
+  options: OpenManagedDatabaseOptions = {}
+): Database.Database {
+  // If constructing the connection itself fails there is no handle to release.
   const handle = new Database(filePath);
-  // Connection-level settings only: these do not modify the database file.
-  handle.pragma('busy_timeout = 5000');
-  handle.pragma('foreign_keys = ON');
+  options.onHandleOpened?.(handle);
 
-  // Throws SchemaTooNewError / DatabaseIntegrityError before any write.
-  provisionDatabase(handle);
+  try {
+    // Connection-level settings only: these do not modify the database file.
+    handle.pragma('busy_timeout = 5000');
+    handle.pragma('foreign_keys = ON');
 
-  // Applied after the guards, because changing the journal mode rewrites the
-  // file header. WAL is what lets the API and worker processes run together.
-  handle.pragma('journal_mode = WAL');
-  handle.pragma('synchronous = NORMAL');
+    // Throws SchemaTooNewError / DatabaseIntegrityError before any write.
+    provisionDatabase(handle, { integrityCheck: options.integrityCheck });
 
-  return handle;
+    // Applied after the guards, because changing the journal mode rewrites the
+    // file header. WAL is what lets the API and worker processes run together.
+    handle.pragma('journal_mode = WAL');
+    handle.pragma('synchronous = NORMAL');
+
+    return handle;
+  } catch (error) {
+    // Any failure above — a refused database, or an unexpected error in a pragma
+    // or a migration — must release the descriptor. Without this, every failed
+    // open leaked a connection: a retry loop (a supervisor restarting the API on
+    // a refused database, say) would accumulate open handles and file locks.
+    closeQuietly(handle);
+    throw error;
+  }
 }
 
 export function getDb(): Database.Database {

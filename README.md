@@ -281,6 +281,8 @@ Every entry point — the API process, the worker daemon, `npm run db:init` and 
 | 5 | Execute `schema.sql` (`CREATE ... IF NOT EXISTS` only) | create missing objects |
 | 6 | Apply pending migrations, each in its own transaction | additive |
 
+If any step throws — including a refusal — the connection is closed before the original error is rethrown, so a retry or a supervisor restart cannot accumulate open handles and file locks. `npm run db:init` follows the same rule: one connection, one `finally` that closes it on success, refusal and unexpected failure alike.
+
 Earlier versions of this code did the opposite: opening the database executed `schema.sql` **and a batch of normalisation `UPDATE`s on every start**, before any integrity check and with no version guard. A database written by a newer release, or one with a damaged page, would have had writes applied to it before anything noticed.
 
 **There is no data normalisation on startup.** The corrections that used to run on every open are migration **v6**, which runs exactly once, inside a transaction, and is recorded in `user_version`. The consequence is worth stating: if someone hand-edits `broker_connections.status` to `CONNECTED`, startup will no longer reset it. Nothing trusts that column — real-money execution is refused in the executor and again in the risk engine, regardless of broker status.
@@ -290,7 +292,7 @@ Earlier versions of this code did the opposite: opening the database executed `s
 - Migrations v2–v5 are additive: `users.is_disabled`, `user_credentials.token_version`, `executions.realised_pnl`, `idempotency_keys`, `worker_heartbeats`, `scheduled_jobs.locked_by/locked_at/last_run_error_category`, plus indexes. v4 rebuilds `idempotency_keys` to fix a primary key while preserving its rows.
 - **v6 is the one migration that changes existing rows**: it relabels demo fixture rows (seeded ids only) as synthetic and clears unsupported live/broker flags. It is versioned, transactional, and runs once.
 - `tests/migration-safety.test.ts` builds a previous-release database, fills it with portfolios, positions, orders, executions, ledger rows and credentials, upgrades it, and asserts every row and value survives.
-- `tests/db-init-safety.test.ts` proves, on isolated files, that a newer version and a failed integrity check both leave the schema, rows and `user_version` untouched, that a supported upgrade preserves user values, and that repeated initialisation changes nothing.
+- `tests/db-init-safety.test.ts` proves, on isolated files, that a newer version and a failed integrity check both leave the schema, rows and `user_version` untouched, that a supported upgrade preserves user values, that repeated initialisation changes nothing, and that a failed open releases its connection (no handle accumulation across 20 refused attempts).
 - Tests always point `INVESTPILOT_DB_PATH` at `data/investpilot.test.db` (wiped by `tests/global-setup.ts`, git-ignored). A regression test asserts the suite is not pointed at `data/investpilot.db`.
 
 **Backup / restore** (verified procedure, not yet rehearsed against a real user's file):
@@ -325,7 +327,7 @@ INVESTPILOT_DB_PATH=./restored.db npm run db:init
 npm test
 ```
 
-Current result: **24 test files, 258 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
+Current result: **24 test files, 267 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
 
 | Area | File |
 | --- | --- |
@@ -337,7 +339,7 @@ Current result: **24 test files, 258 tests passing.** (Update this count if you 
 | Cross-user access (reads and writes) | `tests/authz-ownership.test.ts` |
 | Operator-only actions | `tests/operator-permissions.test.ts` |
 | Migration safety and test-DB isolation | `tests/migration-safety.test.ts` |
-| Database opening: version refusal, integrity refusal, no startup rewrites, idempotent init (9) | `tests/db-init-safety.test.ts` |
+| Database opening: version refusal, integrity refusal, no startup rewrites, idempotent init, connection release (18) | `tests/db-init-safety.test.ts` |
 | Provider trust and registry | `tests/provider-trust.test.ts`, `tests/provider-registry.test.ts` |
 | Worker heartbeat, stale/stopped states, job locks | `tests/worker-heartbeat.test.ts`, `tests/worker-status.test.ts` |
 | Backtest limits, look-ahead, honesty | `tests/backtest-limits.test.ts`, `tests/backtest-metrics.test.ts`, `tests/backtesting.test.ts` |

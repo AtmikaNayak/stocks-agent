@@ -42,7 +42,7 @@ false impression of safety.**
 | T8 | SQL injection | All queries parameterised (`?` placeholders); no string-interpolated user input | No exploitable path found by reading; **not** tool-assisted or fuzz-tested |
 | T9 | Credential stuffing / brute force | scrypt hashes, uniform 401, 10 failed logins / 15 min per email | In-process memory: resets on restart, per-instance |
 | T10 | Timing oracle on login | Password verification runs even for unknown accounts (dummy hash) | Response-time differences from DB lookup remain possible |
-| T11 | Resource exhaustion (CPU/memory) | Bounded backtest inputs, per-user quotas, 16 KB body cap, bounded rate-limit map | Quotas are per-instance; a single process can still be saturated by many users' backtests |
+| T11 | Resource exhaustion (CPU/memory) | Bounded backtest inputs, per-user quotas, 16 KB body cap, bounded rate-limit map; a refused database open closes its connection instead of leaking a descriptor per retry | Quotas are per-instance; a single process can still be saturated by many users' backtests |
 | T12 | Double-spend via concurrent orders | One `BEGIN IMMEDIATE` transaction covers read → risk → write | SQLite serialises writers, so throughput is limited |
 | T13 | Replay / duplicate submission | Scoped, request-hashed idempotency keys | Clients that send no key get none |
 | T14 | Tampered client price | `price` in the body is rejected outright; the simulator prices from the stored quote | None known |
@@ -119,7 +119,7 @@ Run in this repository, on the commit that includes this document:
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Unit/integration suite | `npm test` | 24 files, 258 tests passing |
+| Unit/integration suite | `npm test` | 24 files, 267 tests passing |
 | Type check | `npm run typecheck` | clean |
 | Lint | `npm run lint` | 0 errors, 5 pre-existing hook warnings |
 | Production build | `npm run build` | succeeds |

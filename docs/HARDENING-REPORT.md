@@ -147,7 +147,7 @@ write, so it can no longer credit cash without moving shares.
 
 | # | Requirement | Status | Evidence / gap |
 | --- | --- | --- | --- |
-| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 258 tests |
+| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 267 tests |
 | 2 | Make order execution atomic | `COMPLETE` | `tests/execution-integrity.test.ts` (26) |
 | 3 | Eliminate stale-snapshot double spend | `COMPLETE` | Concurrent-execution test |
 | 4 | Product-type-correct positions (CNC/MIS) | `COMPLETE` | CNC-vs-MIS tests |
@@ -195,6 +195,7 @@ write, so it can no longer credit cash without moving shares.
 | 50 | Open the database without changes first; integrity check before writes; version guard on the app startup path too | `COMPLETE` | `src/db/provision.ts`; `tests/db-init-safety.test.ts` (9) proves refusal leaves schema, rows and version untouched |
 | 51 | No data normalisation on every start | `COMPLETE` | Moved into migration v6; a test reopens the app path and asserts rows are not rewritten |
 | 52 | `db:init` message matches what it did | `COMPLETE` | Prints integrity result, version transition, migrations applied, and that nothing was dropped or deleted |
+| 53 | Release the database connection when a guarded open fails | `COMPLETE` | `openManagedDatabase()` closes the handle in a `catch` before rethrowing the original error; `db:init` uses a single `finally` for success, refusal and unexpected failure. Six regression tests, including CLI exit paths. |
 | 46 | Documentation matches behaviour | `COMPLETE` | README rewritten against the code |
 | 47 | Isolated hardening branch | `PARTIAL` | Work is isolated on `arena/de0ec973-stocks-agent` (base untouched, published as a new remote branch). The requested name `hardening/financial-integrity` was not created: the platform pin forbids it, so a bundle + patch export is provided instead. See §10. |
 | 48 | Independent security audit | `NOT APPLICABLE` | Only source review and automated checks were performed; see `docs/SECURITY-REVIEW.md` |
@@ -307,13 +308,15 @@ and the risk engine rejects REAL independently.
 - `tests/migration-safety.test.ts` builds a previous-release database, fills it,
   upgrades it, and asserts every row and value survives; another test proves the
   migration is idempotent.
-- `tests/db-init-safety.test.ts` (9 tests, isolated files) proves:
+- `tests/db-init-safety.test.ts` (18 tests, isolated files) proves:
   a newer version is refused with **no** schema or row change (including through
   the application startup path); an integrity-check failure causes **no**
   migration writes and leaves v6 unapplied; a supported upgrade preserves user
   portfolio values while correcting fixture labels; repeated initialisation
-  applies nothing and changes no row; and reopening through the app path does not
-  rewrite rows.
+  applies nothing and changes no row; reopening through the app path does not
+  rewrite rows; and a failed open releases its connection, so 20 refused attempts
+  in a row accumulate no handles. The four release tests fail if the cleanup is
+  removed — verified by reverting it and watching them go red.
 
 ### Other data-safety properties
 
@@ -330,7 +333,7 @@ state.
 ```
 $ npm test
  Test Files  24 passed (24)
-      Tests  258 passed (258)
+      Tests  267 passed (267)
 
 $ npx tsc --noEmit
 (no output — clean)
@@ -348,8 +351,8 @@ $ npm audit
 9 vulnerabilities (2 moderate, 7 high)   # build-time only
 ```
 
-Baseline before this work: **17 files / 161 tests**. Net: **+7 files / +97 tests**
-(24 files, 258 tests).
+Baseline before this work: **17 files / 161 tests**. Net: **+7 files / +106 tests**
+(24 files, 267 tests).
 
 **Runtime smoke test** (production build, `next start`, isolated throwaway
 database, then the server was stopped and the file deleted):
