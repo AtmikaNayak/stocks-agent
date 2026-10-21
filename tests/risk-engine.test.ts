@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import db from '../src/db';
 import { evaluateProposalRisk } from '../src/lib/risk-engine';
+import { TRADING_NOW } from './helpers/market-clock';
 
 describe('Deterministic Risk Management Engine', () => {
   it('blocks order that exceeds single stock position concentration (15%)', () => {
@@ -11,7 +12,8 @@ describe('Deterministic Risk Management Engine', () => {
       assetId: 'ast_reliance',
       side: 'BUY',
       quantity: 5,
-      price: 2942.50 // ~₹14,712 > 15% limit
+      price: 2942.50, // ~₹14,712 > 15% limit
+      now: TRADING_NOW
     });
 
     expect(result.passed).toBe(false);
@@ -25,7 +27,8 @@ describe('Deterministic Risk Management Engine', () => {
       assetId: 'ast_tatamotors',
       side: 'BUY',
       quantity: 1,
-      price: 924.10
+      price: 924.10,
+      now: TRADING_NOW
     });
 
     expect(result.passed).toBe(true);
@@ -40,7 +43,8 @@ describe('Deterministic Risk Management Engine', () => {
       assetId: 'ast_reliance',
       side: 'BUY',
       quantity: 1,
-      price: 2942.50
+      price: 2942.50,
+      now: TRADING_NOW
     });
 
     expect(result.passed).toBe(false);
@@ -56,7 +60,8 @@ describe('Deterministic Risk Management Engine', () => {
       assetId: 'ast_tatamotors',
       side: 'BUY',
       quantity: 1,
-      price: 924.10
+      price: 924.10,
+      now: TRADING_NOW
     });
 
     expect(result.passed).toBe(false);

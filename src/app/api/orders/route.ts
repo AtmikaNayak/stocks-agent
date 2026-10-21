@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import db from '@/db';
 import portfolioExecutionAgent from '@/lib/agents/portfolio-execution';
 import { requireAuth, requireOwnedPortfolio } from '@/lib/auth/guard';
+import { AppError } from '@/lib/errors';
+import { IDEMPOTENCY_HEADER } from '@/lib/idempotency';
+import { errorResponse, readJsonBody } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,14 +48,36 @@ export async function GET(request: Request) {
   return NextResponse.json({ orders, executions }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
+/**
+ * POST /api/orders — simulate an order in a VIRTUAL portfolio.
+ *
+ * Idempotency:
+ *   Send `Idempotency-Key: <8–200 chars>` (or `idempotencyKey` in the body).
+ *   The key is bound to the authenticated user and to a hash of the order
+ *   details. Repeating the identical request returns the original result and
+ *   performs no second trade; reusing the key with different details returns
+ *   409. Without a key the server generates a random one, which provides
+ *   storage uniqueness but no duplicate suppression — clients that need retry
+ *   safety must supply a key.
+ */
 export async function POST(request: Request) {
   const auth = requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.value.id;
 
   try {
-    const body = await request.json();
-    const { portfolioId, assetId, side, quantity, price, orderMode = 'MANUAL', productType = 'CNC', proposalId } = body;
+    const body = await readJsonBody(request);
+    const {
+      portfolioId,
+      assetId,
+      side,
+      quantity,
+      price,
+      orderMode = 'MANUAL',
+      productType = 'CNC',
+      proposalId,
+      idempotencyKey
+    } = body as Record<string, unknown>;
 
     if (!portfolioId || !assetId || !side || quantity === undefined || quantity === null) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
@@ -67,25 +92,49 @@ export async function POST(request: Request) {
     }
     const numericQuantity = Number(quantity);
     if (!Number.isSafeInteger(numericQuantity) || numericQuantity <= 0) {
-      return NextResponse.json({ error: 'quantity must be a positive whole number of shares' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'quantity must be a positive whole number of shares' },
+        { status: 400 }
+      );
     }
     if (price !== undefined) {
-      return NextResponse.json({ error: 'Custom fill prices are not supported. Use the stored quote for simulation.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Custom fill prices are not supported. Use the stored quote for simulation.' },
+        { status: 400 }
+      );
     }
+
+    // The header wins; a body field may only agree with it.
+    const headerKey = request.headers.get(IDEMPOTENCY_HEADER);
+    const bodyKey = typeof idempotencyKey === 'string' ? idempotencyKey : undefined;
+    if (headerKey && bodyKey && headerKey.trim() !== bodyKey.trim()) {
+      return NextResponse.json(
+        { error: 'Idempotency-Key header and body idempotencyKey disagree.' },
+        { status: 400 }
+      );
+    }
+    const resolvedKey = headerKey ?? bodyKey;
 
     const result = await portfolioExecutionAgent.executeOrder({
       portfolioId: owned.value.id,
-      assetId,
+      assetId: String(assetId),
       side,
       quantity: numericQuantity,
-      orderMode,
-      productType,
-      proposalId
+      orderMode: (typeof orderMode === 'string' ? orderMode : 'MANUAL') as
+        | 'MANUAL'
+        | 'AI_PROPOSAL_APPROVED'
+        | 'AUTONOMOUS_VIRTUAL'
+        | 'AUTONOMOUS_LIVE',
+      productType: (productType === 'MIS' ? 'MIS' : 'CNC') as 'CNC' | 'MIS',
+      proposalId: typeof proposalId === 'string' ? proposalId : undefined,
+      idempotencyKey: resolvedKey ?? undefined
     });
 
-    return NextResponse.json({ success: true, result });
+    return NextResponse.json(
+      { success: true, result, replayed: result.replayed },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Execution error';
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse(err, 'orders');
   }
 }

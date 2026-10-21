@@ -1,6 +1,7 @@
+import type Database from 'better-sqlite3';
 import db from '../../db';
 import marketData from '../market-data';
-import { RiskCheckResult, IndianChargesBreakdown, OrderSide } from '../types';
+import { RiskCheckResult, IndianChargesBreakdown, OrderSide, MarketQuote, AssetFundamental } from '../types';
 import { describeFundamentalProvenance, describeQuoteProvenance } from '../data-provenance';
 
 export interface PreExecutionDecisionInput {
@@ -15,10 +16,60 @@ export interface PreExecutionDecisionInput {
   charges: IndianChargesBreakdown;
 }
 
+export interface PreExecutionDecisionContext {
+  asset: { id: string; symbol: string; name: string; sector: string | null };
+  quote: MarketQuote | null;
+  fundamentals: AssetFundamental | null;
+  portfolio: { total_value: number; current_cash: number };
+  database: Database.Database;
+}
+
 export class ExplainabilityAgent {
   name = 'EXPLAINABILITY';
 
+  /**
+   * Async entry point: fetches the evidence it needs and delegates to the
+   * synchronous writer below.
+   *
+   * The synchronous writer exists so the decision record can be inserted inside
+   * the same transaction as the order, the execution and the ledger entry. That
+   * is what guarantees an executed order can never exist without its recorded
+   * rationale, or vice versa.
+   */
   async recordPreExecutionDecision(input: PreExecutionDecisionInput) {
+    const database = db.get();
+    const asset = database
+      .prepare('SELECT id, symbol, name, sector FROM assets WHERE id = ?')
+      .get(input.assetId) as PreExecutionDecisionContext['asset'] | undefined;
+    if (!asset) throw new Error(`Asset ${input.assetId} not found.`);
+
+    const quote = await marketData.getQuote(asset.symbol);
+    const fundamentals = await marketData.getFundamentals(asset.symbol);
+    const portfolio =
+      (database
+        .prepare('SELECT total_value, current_cash FROM portfolios WHERE id = ?')
+        .get(input.portfolioId) as { total_value: number; current_cash: number } | undefined) ?? {
+        total_value: 0,
+        current_cash: 0
+      };
+
+    return this.recordPreExecutionDecisionWithDatabase(input, {
+      asset,
+      quote,
+      fundamentals,
+      portfolio,
+      database
+    });
+  }
+
+  /**
+   * Writes the pre-execution decision record, its evidence rows and nothing
+   * else. Fully synchronous, so it can run inside a write transaction.
+   */
+  recordPreExecutionDecisionWithDatabase(
+    input: PreExecutionDecisionInput,
+    context: PreExecutionDecisionContext
+  ) {
     const {
       portfolioId,
       assetId,
@@ -31,13 +82,8 @@ export class ExplainabilityAgent {
       charges
     } = input;
 
-    const asset = db.queryOne<{ id: string; symbol: string; name: string; sector: string }>(
-      'SELECT id, symbol, name, sector FROM assets WHERE id = ?',
-      [assetId]
-    );
-    const fund = asset ? await marketData.getFundamentals(asset.symbol) : null;
+    const { asset, fundamentals: fund, quote, database } = context;
     const fundProvenance = fund ? describeFundamentalProvenance(fund.source) : null;
-    const quote = asset ? await marketData.getQuote(asset.symbol) : null;
     const quoteProvenance = quote
       ? describeQuoteProvenance({ freshness: quote.freshness, provider: quote.provider })
       : null;
@@ -57,17 +103,15 @@ export class ExplainabilityAgent {
         ? `Prices are verified ${quoteProvenance.freshness} data from ${quoteProvenance.provider}.`
         : `Prices are simulated demo fixtures (${quoteProvenance.provider ?? 'unknown source'}), not exchange data.`
       : `Price provenance is unknown.`;
-    const portfolio = db.queryOne<{ total_value: number; current_cash: number }>(
-      'SELECT total_value, current_cash FROM portfolios WHERE id = ?',
-      [portfolioId]
-    );
+    const portfolio = context.portfolio;
 
-    const totalValue = portfolio?.total_value || 25000;
-    const positionPct = Math.round(((quantity * price) / totalValue) * 1000) / 10;
+    const totalValue = portfolio.total_value > 0 ? portfolio.total_value : 0;
+    const positionPct =
+      totalValue > 0 ? Math.round(((quantity * price) / totalValue) * 1000) / 10 : 0;
 
     // Plain Language for Beginners
     const reasoningPlain = action === 'BUY'
-      ? `We purchased ${quantity} shares of ${asset?.name || assetId} at ₹${price} per share in the ${asset?.sector || 'India'} sector. The investment represents ${positionPct}% of your total portfolio, inside the 15% single-company limit. ${priceText}`
+      ? `We purchased ${quantity} shares of ${asset.name || assetId} at ₹${price} per share in the ${asset.sector || 'India'} sector. The investment represents ${positionPct}% of your total portfolio, inside the 15% single-company limit. ${priceText}`
       : `We sold ${quantity} shares of ${asset?.name || assetId} at ₹${price} to lock in proceeds and rebalance your portfolio cash buffer.`;
 
     // Advanced Quantitative Analysis for Experienced Users
@@ -79,18 +123,25 @@ export class ExplainabilityAgent {
       ? `Primary downside risks: (1) Broader sector multiple contraction, (2) Short-term market gap risk below entry, (3) Unexpected raw material or margin compression in upcoming quarter.`
       : `Opportunity cost: The stock could continue to rally post-exit if institutional momentum persists.`;
 
-    const riskSummary = `Passed all ${riskResult.checks.length} deterministic risk checks. Maximum position limit: <= 15% (Actual: ${riskResult.calculatedPositionPct}%). Cash reserve post-order: ₹${riskResult.cashRemainingAfter}.`;
+    const unavailable = riskResult.checks.filter((check) => check.status === 'UNAVAILABLE');
+    const riskSummary = [
+      `Evaluated ${riskResult.checks.length} deterministic risk controls; every evaluated control passed.`,
+      `Post-trade single-stock weight: ${riskResult.calculatedPositionPct}%; total exposure: ${riskResult.calculatedExposureAfterPct}%; cash remaining: ₹${riskResult.cashRemainingAfter}.`,
+      unavailable.length > 0
+        ? `Not evaluable in this build: ${unavailable.map((check) => check.ruleName).join(', ')}.`
+        : 'No control was skipped.'
+    ].join(' ');
 
     const decisionId = `dec_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
     // Store Decision Record BEFORE execution
-    db.execute(`
+    database.prepare(`
       INSERT INTO decision_records (
         id, portfolio_id, proposal_id, strategy_version_id, asset_id, action,
         quantity, price, decision_timestamp, reasoning_plain_language, reasoning_advanced,
         risk_assessment_summary, what_could_go_wrong, market_snapshot_json, portfolio_state_json, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, 'RECORDED')
-    `, [
+    `).run(
       decisionId,
       portfolioId,
       proposalId || null,
@@ -103,35 +154,35 @@ export class ExplainabilityAgent {
       reasoningAdvanced,
       riskSummary,
       whatCouldGoWrong,
-      JSON.stringify({ price, sector: asset?.sector, fund: fund || {} }),
-      JSON.stringify({ totalValue, currentCash: portfolio?.current_cash || 0 })
-    ]);
+      JSON.stringify({ price, sector: asset.sector, fund: fund || {} }),
+      JSON.stringify({ totalValue, currentCash: portfolio.current_cash || 0 })
+    );
 
     // Store supporting and contrary evidence items
     if (action === 'BUY') {
-      db.execute(`
+      database.prepare(`
         INSERT INTO decision_evidence (id, decision_id, evidence_type, title, detail, source, source_timestamp, is_supporting)
         VALUES (?, ?, 'FINANCIAL_RATIO', 'Return on capital and leverage', ?, ?, datetime('now'), 1)
-      `, [
+      `).run(
         `evi_${Date.now()}_1`,
         decisionId,
         fundProvenance?.isVerified
           ? `ROCE is ${metric(fund?.roce, '%', 'ROCE')}, and Debt-to-Equity is ${metric(fund?.debtToEquity, '', 'D/E')}.`
           : `Fundamentals for this company are demo fixtures and were not used as justification.`,
         fundProvenance?.isVerified ? (fundProvenance.provider ?? 'verified fundamentals source') : 'SYNTHETIC_DEMO'
-      ]);
+      );
 
-      db.execute(`
+      database.prepare(`
         INSERT INTO decision_evidence (id, decision_id, evidence_type, title, detail, source, source_timestamp, is_supporting)
         VALUES (?, ?, 'VALUATION', 'Valuation multiple', ?, ?, datetime('now'), 0)
-      `, [
+      `).run(
         `evi_${Date.now()}_2`,
         decisionId,
         fundProvenance?.isVerified
           ? `Trailing P/E is ${metric(fund?.peRatio, 'x', 'P/E')}; no historical median comparison is stored in this dataset.`
           : `No verified valuation multiple is available for this company in this dataset.`,
         quoteProvenance?.isVerified ? (quoteProvenance.provider ?? 'verified price feed') : 'SYNTHETIC_DEMO'
-      ]);
+      );
     }
 
     return {

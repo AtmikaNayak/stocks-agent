@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import db from '../src/db';
 import portfolioExecutionAgent from '../src/lib/agents/portfolio-execution';
+import { TRADING_NOW } from './helpers/market-clock';
 
 describe('Financial Isolation & Execution Engine', () => {
   it('executes virtual order, debits cash ledger, updates position and leaves real portfolio untouched', async () => {
@@ -13,7 +14,8 @@ describe('Financial Isolation & Execution Engine', () => {
       assetId: 'ast_itc', // ₹492 per share
       side: 'BUY',
       quantity: 2,
-      orderMode: 'AUTONOMOUS_VIRTUAL'
+      orderMode: 'AUTONOMOUS_VIRTUAL',
+      now: TRADING_NOW
     });
 
     expect(execResult.executionId).toBeDefined();

@@ -233,13 +233,13 @@ describe('ownership scoping — writes', () => {
         seededUserId
       )
     );
-    // 404 because the seeded user has no provisioned credential to mint a
-    // session with? No: sessionCookie() signs a token directly, so the real
-    // portfolio is reached and the execution guard must refuse it.
-    expect([400, 404]).toContain(response.status);
-    if (response.status === 400) {
-      const body = await response.json();
-      expect(body.error).toMatch(/REAL portfolio execution is disabled|not found/i);
-    }
+    // sessionCookie() signs a token directly, so the real portfolio is reached
+    // and the execution guard must refuse it. 403 is the explicit
+    // "policy forbids this" answer; anything that silently executed would be a
+    // critical failure.
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error).toMatch(/REAL portfolio execution is disabled/i);
+    expect(body.code).toBe('REAL_EXECUTION_DISABLED');
   });
 });
