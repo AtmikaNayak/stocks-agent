@@ -8,7 +8,12 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
  *
  *   v1.<base64url(payload)>.<base64url(hmac)>
  *
- * payload = { v: 1, sub: <user id>, iat: <unix seconds>, exp: <unix seconds> }
+ * payload = { v: 1, sub: <user id>, iat: <unix seconds>, exp: <unix seconds>, tv: <token version> }
+ *
+ * `tv` is compared against `user_credentials.token_version` on every request.
+ * Bumping that column (logout, password change, account disable) revokes every
+ * token issued before the bump, which turns the stateless cookie into something
+ * that can actually be revoked server-side.
  *
  * Security properties enforced here:
  *  - the token is signed with a server-only secret and verified in constant time;
@@ -30,6 +35,8 @@ export interface SessionPayload {
   userId: string;
   issuedAt: number;
   expiresAt: number;
+  /** Server-side revocation counter at issue time. */
+  tokenVersion: number;
 }
 
 export function isProduction(): boolean {
@@ -82,17 +89,21 @@ function sign(secret: string, data: string): string {
 
 export function issueSessionToken(
   userId: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  tokenVersion: number = 0
 ): { token: string; payload: SessionPayload } {
   const secret = getSessionSecret();
   if (!secret) throw new Error('Session signing secret is not configured.');
   if (typeof userId !== 'string' || userId.trim() === '') throw new Error('A user id is required to issue a session.');
+  if (!Number.isSafeInteger(tokenVersion) || tokenVersion < 0) {
+    throw new Error('A non-negative integer token version is required.');
+  }
 
   const issuedAt = Math.floor(now / 1000);
   const expiresAt = issuedAt + sessionTtlSeconds();
-  const payload: SessionPayload = { userId, issuedAt, expiresAt };
+  const payload: SessionPayload = { userId, issuedAt, expiresAt, tokenVersion };
   const body = base64url(
-    JSON.stringify({ v: 1, sub: userId, iat: issuedAt, exp: expiresAt })
+    JSON.stringify({ v: 1, sub: userId, iat: issuedAt, exp: expiresAt, tv: tokenVersion })
   );
   return { token: `${TOKEN_VERSION}.${body}.${sign(secret, `${TOKEN_VERSION}.${body}`)}`, payload };
 }
@@ -131,6 +142,8 @@ export function verifySessionToken(
   if (record.v !== 1) return null;
   if (typeof record.sub !== 'string' || record.sub.trim() === '') return null;
   if (!Number.isSafeInteger(record.iat) || !Number.isSafeInteger(record.exp)) return null;
+  // A token with no revocation counter cannot be revoked, so it is refused.
+  if (!Number.isSafeInteger(record.tv) || (record.tv as number) < 0) return null;
 
   const issuedAt = record.iat as number;
   const expiresAt = record.exp as number;
@@ -140,7 +153,7 @@ export function verifySessionToken(
   // Reject tokens dated in the future beyond a small clock-skew allowance.
   if (issuedAt > nowSeconds + 60) return null;
 
-  return { userId: record.sub, issuedAt, expiresAt };
+  return { userId: record.sub, issuedAt, expiresAt, tokenVersion: record.tv as number };
 }
 
 export function serializeSessionCookie(token: string, maxAgeSeconds: number): string {

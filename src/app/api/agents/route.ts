@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/db';
 import marketIntelligenceAgent from '@/lib/agents/market-intelligence';
-import { requireAuth } from '@/lib/auth/guard';
+import { requireAuth, requireSameOrigin } from '@/lib/auth/guard';
 import { isOperatorUserId, requireOperator } from '@/lib/auth/operator';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +58,9 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
+    const sameOrigin = requireSameOrigin(request);
+    if (!sameOrigin.ok) return sameOrigin.response;
+
     const body = await request.json();
     const { action = 'scan' } = body;
 

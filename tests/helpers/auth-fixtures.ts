@@ -82,9 +82,21 @@ export function ensureAllFixtures(): void {
   ensureUser(USER_B);
 }
 
-/** A valid session cookie header value for the user (no login round-trip). */
+/**
+ * A valid session cookie header value for the user (no login round-trip).
+ *
+ * The token must carry the account's *current* revocation counter, exactly like
+ * a real login does — otherwise a logout in an earlier test would invalidate
+ * every later token for that user.
+ */
 export function sessionCookie(userId: string): string {
-  const { token } = issueSessionToken(userId);
+  const row = db.queryOne<{ token_version: number }>(
+    `SELECT COALESCE(c.token_version, 0) AS token_version
+     FROM users u LEFT JOIN user_credentials c ON c.user_id = u.id
+     WHERE u.id = ?`,
+    [userId]
+  );
+  const { token } = issueSessionToken(userId, Date.now(), Number(row?.token_version ?? 0));
   return `${SESSION_COOKIE}=${token}`;
 }
 

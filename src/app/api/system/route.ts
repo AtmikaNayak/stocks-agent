@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import db from '@/db';
 import { workerScheduler } from '@/lib/worker/scheduler';
 import { buildWorkerStatus } from '@/lib/worker/status';
-import { requireAuth } from '@/lib/auth/guard';
+import { requireAuth, requireSameOrigin } from '@/lib/auth/guard';
 import { isOperatorUserId, requireOperator } from '@/lib/auth/operator';
 
 export const dynamic = 'force-dynamic';
@@ -70,6 +70,9 @@ export async function POST(request: Request) {
   const operatorId = auth.value.id;
 
   try {
+    const sameOrigin = requireSameOrigin(request);
+    if (!sameOrigin.ok) return sameOrigin.response;
+
     const body = await request.json();
     const { action, jobName } = body;
 

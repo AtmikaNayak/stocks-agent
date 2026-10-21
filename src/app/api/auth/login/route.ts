@@ -7,7 +7,7 @@ import {
   serializeSessionCookie,
   sessionTtlSeconds
 } from '@/lib/auth/session';
-import { jsonError } from '@/lib/auth/guard';
+import { jsonError, requireSameOrigin } from '@/lib/auth/guard';
 import { getLoginThrottle, trustedClientIp } from '@/lib/auth/rate-limit';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +36,11 @@ export async function POST(request: Request) {
   if (!getSessionSecret()) {
     return jsonError('Authentication is not configured on this server.', 503);
   }
+
+  // Login CSRF: a cross-site form post must not be able to sign a victim into
+  // an attacker-controlled account.
+  const sameOrigin = requireSameOrigin(request);
+  if (!sameOrigin.ok) return sameOrigin.response;
 
   let body: unknown;
   try {
@@ -69,8 +74,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const row = db.queryOne<{ id: string; email: string; name: string; password_hash: string | null }>(
-    `SELECT u.id, u.email, u.name, c.password_hash
+  const row = db.queryOne<{
+    id: string;
+    email: string;
+    name: string;
+    password_hash: string | null;
+    is_disabled: number;
+    token_version: number | null;
+  }>(
+    `SELECT u.id, u.email, u.name, u.is_disabled, c.password_hash, c.token_version
      FROM users u
      LEFT JOIN user_credentials c ON c.user_id = u.id
      WHERE lower(u.email) = lower(?)`,
@@ -80,7 +92,7 @@ export async function POST(request: Request) {
   // Always run a full scrypt verification so unknown accounts and accounts
   // without credentials are not distinguishable by response time.
   const passwordOk = verifyPassword(password, row?.password_hash ?? DUMMY_PASSWORD_HASH);
-  if (!row || !row.password_hash || !passwordOk) {
+  if (!row || !row.password_hash || !passwordOk || row.is_disabled === 1) {
     // Counted under the normalized email (and the proxy-supplied IP only when
     // proxy trust is explicitly configured).
     throttle.recordFailure(attempt);
@@ -89,7 +101,9 @@ export async function POST(request: Request) {
 
   throttle.reset(attempt);
 
-  const { token, payload } = issueSessionToken(row.id);
+  // The issued token carries the account's current revocation counter, so a
+  // later logout/password change invalidates it immediately.
+  const { token, payload } = issueSessionToken(row.id, Date.now(), Number(row.token_version ?? 0));
   db.execute(
     "UPDATE user_credentials SET last_login_at = datetime('now') WHERE user_id = ?",
     [row.id]

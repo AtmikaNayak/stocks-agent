@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/db';
-import { requireAuth } from '@/lib/auth/guard';
+import { requireAuth, requireSameOrigin } from '@/lib/auth/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +33,9 @@ export async function POST(request: Request) {
   const USER_ID = auth.value.id;
 
   try {
+    const sameOrigin = requireSameOrigin(request);
+    if (!sameOrigin.ok) return sameOrigin.response;
+
     const body = await request.json();
     const { action } = body;
 

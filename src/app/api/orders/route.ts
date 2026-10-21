@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/db';
 import portfolioExecutionAgent from '@/lib/agents/portfolio-execution';
-import { requireAuth, requireOwnedPortfolio } from '@/lib/auth/guard';
+import { requireAuth, requireOwnedPortfolio, requireSameOrigin } from '@/lib/auth/guard';
 import { AppError } from '@/lib/errors';
 import { IDEMPOTENCY_HEADER } from '@/lib/idempotency';
 import { errorResponse, readJsonBody } from '@/lib/http';
@@ -66,6 +66,9 @@ export async function POST(request: Request) {
   const userId = auth.value.id;
 
   try {
+    const sameOrigin = requireSameOrigin(request);
+    if (!sameOrigin.ok) return sameOrigin.response;
+
     const body = await readJsonBody(request);
     const {
       portfolioId,

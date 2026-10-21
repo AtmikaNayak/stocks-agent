@@ -3,7 +3,7 @@ import db from '@/db';
 import investmentStrategistAgent from '@/lib/agents/strategist';
 import portfolioExecutionAgent from '@/lib/agents/portfolio-execution';
 import { ValidationError } from '@/lib/validation';
-import { requireAuth, requireId, requireOwnedPortfolio } from '@/lib/auth/guard';
+import { requireAuth, requireId, requireOwnedPortfolio, requireSameOrigin } from '@/lib/auth/guard';
 import { AppError } from '@/lib/errors';
 import { errorResponse, readJsonBody } from '@/lib/http';
 
@@ -80,6 +80,9 @@ export async function POST(request: Request) {
   const userId = auth.value.id;
 
   try {
+    const sameOrigin = requireSameOrigin(request);
+    if (!sameOrigin.ok) return sameOrigin.response;
+
     const body = await readJsonBody(request);
     const { action } = body;
 
