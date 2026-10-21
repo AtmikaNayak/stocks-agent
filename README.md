@@ -268,10 +268,29 @@ Consequences that are actually guaranteed:
 
 ## 🗄️ Database, migrations, backup and restore
 
-- `npm run db:init` creates missing tables and applies **additive** migrations (`PRAGMA user_version`). It never drops, truncates, reseeds or rewrites rows, refuses to run if the database is newer than the build, and runs `integrity_check` first.
+### How the database is opened
+
+Every entry point — the API process, the worker daemon, `npm run db:init` and the tests — uses the same guarded function, `provisionDatabase()` in `src/db/provision.ts`. It runs in this order, and the order is the safety property:
+
+| Step | What happens | Writes? |
+| --- | --- | --- |
+| 1 | Read `PRAGMA user_version` | no |
+| 2 | **Refuse** a database newer than `CURRENT_SCHEMA_VERSION` (`SchemaTooNewError`) | **no** |
+| 3 | `PRAGMA integrity_check` | no |
+| 4 | **Refuse** a database that fails it (`DatabaseIntegrityError`) | **no** |
+| 5 | Execute `schema.sql` (`CREATE ... IF NOT EXISTS` only) | create missing objects |
+| 6 | Apply pending migrations, each in its own transaction | additive |
+
+Earlier versions of this code did the opposite: opening the database executed `schema.sql` **and a batch of normalisation `UPDATE`s on every start**, before any integrity check and with no version guard. A database written by a newer release, or one with a damaged page, would have had writes applied to it before anything noticed.
+
+**There is no data normalisation on startup.** The corrections that used to run on every open are migration **v6**, which runs exactly once, inside a transaction, and is recorded in `user_version`. The consequence is worth stating: if someone hand-edits `broker_connections.status` to `CONNECTED`, startup will no longer reset it. Nothing trusts that column — real-money execution is refused in the executor and again in the risk engine, regardless of broker status.
+
+- `npm run db:init` prints the resolved path, the integrity result, the version transition, every migration it applied, and states that no table was dropped and no row deleted. It exits non-zero on either refusal.
 - `npm run db:seed` is a **separate, explicit** command. Tests never call it against the real database.
 - Migrations v2–v5 are additive: `users.is_disabled`, `user_credentials.token_version`, `executions.realised_pnl`, `idempotency_keys`, `worker_heartbeats`, `scheduled_jobs.locked_by/locked_at/last_run_error_category`, plus indexes. v4 rebuilds `idempotency_keys` to fix a primary key while preserving its rows.
+- **v6 is the one migration that changes existing rows**: it relabels demo fixture rows (seeded ids only) as synthetic and clears unsupported live/broker flags. It is versioned, transactional, and runs once.
 - `tests/migration-safety.test.ts` builds a previous-release database, fills it with portfolios, positions, orders, executions, ledger rows and credentials, upgrades it, and asserts every row and value survives.
+- `tests/db-init-safety.test.ts` proves, on isolated files, that a newer version and a failed integrity check both leave the schema, rows and `user_version` untouched, that a supported upgrade preserves user values, and that repeated initialisation changes nothing.
 - Tests always point `INVESTPILOT_DB_PATH` at `data/investpilot.test.db` (wiped by `tests/global-setup.ts`, git-ignored). A regression test asserts the suite is not pointed at `data/investpilot.db`.
 
 **Backup / restore** (verified procedure, not yet rehearsed against a real user's file):
@@ -306,7 +325,7 @@ INVESTPILOT_DB_PATH=./restored.db npm run db:init
 npm test
 ```
 
-Current result: **23 test files, 248 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
+Current result: **24 test files, 258 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
 
 | Area | File |
 | --- | --- |
@@ -318,6 +337,7 @@ Current result: **23 test files, 248 tests passing.** (Update this count if you 
 | Cross-user access (reads and writes) | `tests/authz-ownership.test.ts` |
 | Operator-only actions | `tests/operator-permissions.test.ts` |
 | Migration safety and test-DB isolation | `tests/migration-safety.test.ts` |
+| Database opening: version refusal, integrity refusal, no startup rewrites, idempotent init (9) | `tests/db-init-safety.test.ts` |
 | Provider trust and registry | `tests/provider-trust.test.ts`, `tests/provider-registry.test.ts` |
 | Worker heartbeat, stale/stopped states, job locks | `tests/worker-heartbeat.test.ts`, `tests/worker-status.test.ts` |
 | Backtest limits, look-ahead, honesty | `tests/backtest-limits.test.ts`, `tests/backtest-metrics.test.ts`, `tests/backtesting.test.ts` |
@@ -360,7 +380,7 @@ npm run dev                   # http://localhost:3000
 - **No MFA, no email verification, no self-service password reset.** There is no mail service configured, so these flows are not simulated. Provisioning is administrator-assisted (`npm run auth:set-password`); recovery means re-running it. A real reset flow needs an SMTP/API provider, verified sender identity and expiring single-use tokens — none of which exist here.
 - **Operator management is an environment variable**, not a database role: no UI, no grant/revoke audit trail.
 - **Synthetic data everywhere.** Prices, fundamentals, news and backtest records are demo fixtures. No live NSE/BSE feed is wired in.
-- **Broker integration is absent by design.** Do not enter broker keys, secrets, PINs or TOTP values into this build. A database row marked `CONNECTED` is forced back to `DISCONNECTED` at startup and is not proof of a session.
+- **Broker integration is absent by design.** Do not enter broker keys, secrets, PINs or TOTP values into this build. Migration v6 clears mock `CONNECTED`/`CONNECTING` sessions once, but a database row marked `CONNECTED` is never proof of a session, and nothing in the code treats it as authorization.
 - **Real-money execution stays blocked** in the execution service. Do not bypass the guard, set a broker row to `CONNECTED`, or hand-edit `AUTHORISED_LIVE`.
 - **CSP uses `'unsafe-inline'`** for scripts (see above).
 - **5 ESLint hook warnings** remain: `setState` inside `useEffect` in four screens (a render-performance advisory). Tracked as UI debt.

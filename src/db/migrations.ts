@@ -20,7 +20,7 @@ import type Database from 'better-sqlite3';
  * regression test for exactly that (`tests/migration-safety.test.ts`).
  */
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 interface MigrationStep {
   version: number;
@@ -185,6 +185,104 @@ const STEPS: MigrationStep[] = [
       // Surface a failure category rather than only a free-text message.
       addColumnIfMissing(db, 'scheduled_jobs', 'last_run_error_category', 'TEXT');
     }
+  },
+  {
+    version: 6,
+    description:
+      'once-only data normalisation: demo-data labels and disabled live/broker flags',
+    up: (db) => {
+      // These corrections used to run on EVERY database open, which meant the
+      // application rewrote rows before it had even checked the integrity of the
+      // file or which release wrote it. They are data changes, so they belong in
+      // a versioned, transactional migration that runs exactly once.
+      //
+      // Each statement is scoped to rows this project itself created (seed ids or
+      // a status flag), so a user's own records keep their values.
+
+      // 1. This build has no broker authentication or fill adapter. A stored
+      //    "connected" mock session cannot be an authenticated broker session.
+      db.prepare(
+        `UPDATE broker_connections
+         SET status = 'DISCONNECTED',
+             encrypted_access_token = NULL,
+             status_message = 'Live broker adapter is not implemented in this build; no authenticated session is active.',
+             updated_at = datetime('now')
+         WHERE status IN ('CONNECTED', 'CONNECTING')`
+      ).run();
+
+      // 2. Real portfolios may never run autonomous trading. The executor refuses
+      //    REAL accounts outright, so this is a second, durable barrier.
+      db.prepare(
+        `UPDATE portfolio_permissions
+         SET allow_autonomous_trading = 0
+         WHERE portfolio_id IN (SELECT id FROM portfolios WHERE type = 'REAL')`
+      ).run();
+
+      // 3. The live control mode is a UI placeholder and is not supported.
+      db.prepare(
+        `UPDATE user_settings
+         SET control_mode = 'COPILOT', updated_at = datetime('now')
+         WHERE control_mode = 'AUTHORISED_LIVE'`
+      ).run();
+
+      // 4. Rows written by older seed scripts carried a provider label that
+      //    looked verified. Relabel them as synthetic fixtures.
+      db.prepare(
+        `UPDATE market_data_points
+         SET provider = 'SYNTHETIC_SEED', freshness_status = 'SYNTHETIC', quality_score = 0.0
+         WHERE id GLOB 'mdp_ast_*'`
+      ).run();
+      db.prepare(
+        `UPDATE company_fundamentals
+         SET source = 'SYNTHETIC_SEED — illustrative metrics; not verified'
+         WHERE id GLOB 'fnd_ast_*'`
+      ).run();
+
+      const demoNews: Array<[string, string]> = [
+        ['news_01', '[DEMO DATA] Example Reliance Industries headline'],
+        ['news_02', '[DEMO DATA] Example TCS headline'],
+        ['news_03', '[DEMO DATA] Example HDFC Bank / RBI headline'],
+        ['news_04', '[DEMO DATA] Example Tata Motors headline'],
+        ['news_05', '[DEMO DATA] Example Infosys headline']
+      ];
+      const relabelNews = db.prepare(
+        `UPDATE news_items
+         SET headline = ?, summary = 'Demo fixture only; this is not a real or verified market-news item.',
+             source = 'DEMO_SEED', sentiment_score = 0.0, sentiment_label = 'NEUTRAL'
+         WHERE id = ?`
+      );
+      for (const [id, headline] of demoNews) relabelNews.run(headline, id);
+
+      // 5. Seeded strategy versions are not approved for live use.
+      db.prepare(
+        `UPDATE strategy_versions
+         SET status = 'PAPER_TESTING', approved_by = NULL, approved_at = NULL,
+             approval_notes = 'Seed fixture only; live use is not approved. Requires real data and independent validation.'
+         WHERE id IN ('ver_strat_1_v12', 'ver_strat_2_v20')`
+      ).run();
+
+      // 6. The seeded backtest is a placeholder, not a result.
+      db.prepare(
+        `UPDATE backtest_runs
+         SET asset_universe = 'DEMO FIXTURE — NO VERIFIED BACKTEST',
+             initial_capital = 25000.0, final_capital = 25000.0,
+             total_return_pct = 0.0, cagr_pct = 0.0, max_drawdown_pct = 0.0,
+             sharpe_ratio = 0.0, sortino_ratio = 0.0, win_rate_pct = 0.0,
+             total_trades = 0, turnover_ratio = 0.0, slippage_assumed_pct = 0.0,
+             brokerage_assumed = 0.0, out_of_sample_tested = 0,
+             results_json = '{"demoFixture":true,"verified":false,"message":"Placeholder only; no actual backtest has been run."}'
+         WHERE id = 'bt_strat_1_2024_2026'`
+      ).run();
+
+      // 7. A seeded job that claims a verified run never actually ran.
+      db.prepare(
+        `UPDATE scheduled_jobs
+         SET last_run_status = 'NOT_RUN',
+             last_run_message = 'Seed fixture; no worker execution has been verified.'
+         WHERE id GLOB 'job_*'
+           AND last_run_message = 'Executed on schedule with verified status.'`
+      ).run();
+    }
   }
 ];
 
@@ -200,6 +298,15 @@ export interface MigrationResult {
  */
 export function runMigrations(db: Database.Database): MigrationResult {
   const from = Number(db.pragma('user_version', { simple: true }) ?? 0);
+
+  // Defence in depth: provisionDatabase() already refuses a newer database, but
+  // this function must not silently no-op on one if it is ever called directly.
+  if (from > CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `Refusing to migrate: the database is at version ${from}, newer than this build's ${CURRENT_SCHEMA_VERSION}.`
+    );
+  }
+
   const applied: string[] = [];
 
   for (const step of STEPS) {

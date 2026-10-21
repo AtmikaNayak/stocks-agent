@@ -672,6 +672,45 @@ describe('real-money execution remains blocked', () => {
     expect(after.c).toBe(before.c);
   });
 
+  it('still refuses a REAL portfolio when the broker row claims CONNECTED', async () => {
+    // Data normalisation used to run on every startup and would reset this row.
+    // It is now a once-only migration, so this test proves the real-money guard
+    // does not depend on that rewrite having happened.
+    const original = db.queryOne<{ status: string; status_message: string | null }>(
+      "SELECT status, status_message FROM broker_connections WHERE user_id = 'usr_pilot_01' LIMIT 1"
+    )!;
+    db.execute(
+      "UPDATE broker_connections SET status = 'CONNECTED' WHERE user_id = 'usr_pilot_01'"
+    );
+
+    try {
+      const before = db.queryOne<{ c: number }>(
+        "SELECT COUNT(*) AS c FROM orders WHERE portfolio_id = 'port_real_01'"
+      )!;
+
+      await expect(
+        portfolioExecutionAgent.executeOrder({
+          portfolioId: 'port_real_01',
+          assetId: ASSET_ITC,
+          side: 'BUY',
+          quantity: 1,
+          orderMode: 'MANUAL',
+          now: TRADING_NOW
+        })
+      ).rejects.toMatchObject({ code: 'REAL_EXECUTION_DISABLED', statusCode: 403 });
+
+      const after = db.queryOne<{ c: number }>(
+        "SELECT COUNT(*) AS c FROM orders WHERE portfolio_id = 'port_real_01'"
+      )!;
+      expect(after.c).toBe(before.c);
+    } finally {
+      db.execute(
+        "UPDATE broker_connections SET status = ?, status_message = ? WHERE user_id = 'usr_pilot_01'",
+        [original.status, original.status_message]
+      );
+    }
+  });
+
   it('refuses AUTONOMOUS_LIVE even on a virtual portfolio', async () => {
     const fixture = createFixture();
 

@@ -47,7 +47,7 @@ false impression of safety.**
 | T13 | Replay / duplicate submission | Scoped, request-hashed idempotency keys | Clients that send no key get none |
 | T14 | Tampered client price | `price` in the body is rejected outright; the simulator prices from the stored quote | None known |
 | T15 | Real-money execution | `portfolios.type = 'REAL'` rejected pre-write; `AUTONOMOUS_LIVE` rejected; broker route refuses all writes that would imply connectivity | Guarded in code and by tests — but this is a **code** guard, not a compliance control, and no broker adapter exists to test against |
-| T16 | Data corruption by migration | Additive migrations, `user_version` gate, integrity check, downgrade refusal | No automatic down-migration; restore from backup |
+| T16 | Data corruption by migration | One guarded open path: read version → refuse newer → `integrity_check` → refuse corrupt → schema → migrations. A refusal writes nothing. Startup performs no data normalisation; the once-only v6 migration does. | No automatic down-migration; restore from backup |
 | T17 | Secret leakage in logs or errors | Errors are scrubbed to a generic 500; no secrets are logged; `.env` is git-ignored | A developer could still `console.log` a secret; nothing prevents that |
 | T18 | Dependency compromise | `npm audit`; production tree clean | 9 advisories in the build-time tree; no reachable runtime path found, **not** independently verified |
 
@@ -119,7 +119,7 @@ Run in this repository, on the commit that includes this document:
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Unit/integration suite | `npm test` | 23 files, 248 tests passing |
+| Unit/integration suite | `npm test` | 24 files, 258 tests passing |
 | Type check | `npm run typecheck` | clean |
 | Lint | `npm run lint` | 0 errors, 5 pre-existing hook warnings |
 | Production build | `npm run build` | succeeds |

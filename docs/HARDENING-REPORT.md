@@ -67,10 +67,12 @@ Held throughout:
 
 The brief asked for a new branch named `hardening/financial-integrity`. This
 session is pinned by the platform to `arena/de0ec973-stocks-agent`, and creating
-or switching branches would detach the work from the session. **All seven
-commits are therefore on `arena/de0ec973-stocks-agent`, branched from
-`417e2ec`.** The base branch was not modified. This is recorded as `PARTIAL`
-against the branch-hygiene requirement rather than being quietly ignored.
+or switching branches would detach the work from the session. **Every commit is
+therefore on `arena/de0ec973-stocks-agent`, branched from `417e2ec`**, and that
+is the branch that was published. The base branch was not modified. This is
+recorded as `PARTIAL` against the branch-hygiene requirement rather than being
+quietly ignored; §10 gives the export that reproduces the same history under the
+requested name.
 
 ## 3. Baseline: what was actually broken
 
@@ -94,12 +96,18 @@ Found by reading the code, then confirmed with failing tests before fixing.
 | B14 | `npm run db:init` pointed at a file that did not exist; `npm run lint` used `next lint` (removed in Next 16) | Two shipped scripts simply failed |
 | B15 | Tests shared the demo database; agent validation queried for "assets without fundamentals" | A legitimate test asset polluted an unrelated assertion |
 | B16 | `readJsonBody` read the whole body before checking its length; login bypassed it entirely with `request.json()` | The one unauthenticated endpoint buffered an arbitrarily large body and skipped the content-type check |
+| B17 | `getDb()` executed `schema.sql` **and a batch of normalisation `UPDATE`s on every open**, before any integrity check, with no `user_version` guard | A database written by a newer release, or one with a damaged page, would have had DDL and row rewrites applied to it before anything noticed; and every process start silently mutated existing rows |
 
 ## 4. Changes made
 
 Ordered oldest first. Each commit was type-checked and tested before it was
-made; `lint` only existed from `8637f15` onwards and has passed since. The last
-entries touch only this document and the README.
+made; `lint` only existed from `8637f15` onwards and has passed since.
+
+Commits after `e07f652` are not listed by SHA here because a document cannot
+record its own commit. They are visible with `git log 417e2ec..HEAD` and cover:
+documentation corrections, drawdown regression tests, the publication record,
+the README placeholder fix, and the **guarded database opening** described in
+§8 (B17).
 
 | SHA | Change |
 | --- | --- |
@@ -139,7 +147,7 @@ write, so it can no longer credit cash without moving shares.
 
 | # | Requirement | Status | Evidence / gap |
 | --- | --- | --- | --- |
-| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 248 tests |
+| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 258 tests |
 | 2 | Make order execution atomic | `COMPLETE` | `tests/execution-integrity.test.ts` (26) |
 | 3 | Eliminate stale-snapshot double spend | `COMPLETE` | Concurrent-execution test |
 | 4 | Product-type-correct positions (CNC/MIS) | `COMPLETE` | CNC-vs-MIS tests |
@@ -175,8 +183,8 @@ write, so it can no longer credit cash without moving shares.
 | 34 | Out-of-sample / walk-forward evaluation | `DEFERRED` | No held-out data exists; would require a data-splitting design |
 | 35 | Worker liveness tells the truth | `COMPLETE` | Heartbeat table; job history never upgrades status |
 | 36 | Overlapping job execution | `COMPLETE` | Conditional-UPDATE lock with TTL reclaim |
-| 37 | Safe additive migrations | `COMPLETE` | `tests/migration-safety.test.ts` |
-| 38 | Test isolation from the real database | `COMPLETE` | Separate file, wiped per run, asserted by test |
+| 37 | Safe additive migrations | `COMPLETE` | `tests/migration-safety.test.ts`; v6 is the only step that modifies rows, and it is versioned and transactional |
+| 38 | Test isolation from the real database | `COMPLETE` | Separate file, wiped per run, asserted by test; the init-safety suite uses its own temporary files |
 | 39 | Backup / restore procedure | `PARTIAL` | Documented and syntax-checked; **not rehearsed against a real user file** in this environment |
 | 40 | Transaction-cost correctness | `COMPLETE` | Slippage folded into turnover so `gross == qty × fill` |
 | 41 | Automated UI / accessibility tests | `BLOCKED` | No browser test harness runs in this environment |
@@ -184,6 +192,9 @@ write, so it can no longer credit cash without moving shares.
 | 43 | CI runs on every push | `COMPLETE` | `push` / `pull_request` / `workflow_dispatch` |
 | 44 | CI verifies typecheck, lint, tests, build, audit | `COMPLETE` | Workflow updated accordingly |
 | 45 | Broken npm scripts repaired | `COMPLETE` | `db:init` (missing file) and `lint` (removed `next lint`) |
+| 50 | Open the database without changes first; integrity check before writes; version guard on the app startup path too | `COMPLETE` | `src/db/provision.ts`; `tests/db-init-safety.test.ts` (9) proves refusal leaves schema, rows and version untouched |
+| 51 | No data normalisation on every start | `COMPLETE` | Moved into migration v6; a test reopens the app path and asserts rows are not rewritten |
+| 52 | `db:init` message matches what it did | `COMPLETE` | Prints integrity result, version transition, migrations applied, and that nothing was dropped or deleted |
 | 46 | Documentation matches behaviour | `COMPLETE` | README rewritten against the code |
 | 47 | Isolated hardening branch | `PARTIAL` | Work is isolated on `arena/de0ec973-stocks-agent` (base untouched, published as a new remote branch). The requested name `hardening/financial-integrity` was not created: the platform pin forbids it, so a bundle + patch export is provided instead. See §10. |
 | 48 | Independent security audit | `NOT APPLICABLE` | Only source review and automated checks were performed; see `docs/SECURITY-REVIEW.md` |
@@ -248,14 +259,64 @@ Full detail in `docs/SECURITY-REVIEW.md`. In short:
 
 ## 8. Data integrity and migrations
 
-- `PRAGMA user_version` gates the schema; the app refuses to run against a newer
-  database instead of silently downgrading it.
+### How the database is opened
+
+One guarded path, `provisionDatabase()` in `src/db/provision.ts`, used by the API
+process, the worker, `npm run db:init` and the tests:
+
+| Step | Action | Writes |
+| --- | --- | --- |
+| 1 | read `PRAGMA user_version` | no |
+| 2 | refuse a version newer than `CURRENT_SCHEMA_VERSION` | **no** |
+| 3 | `PRAGMA integrity_check` | no |
+| 4 | refuse a database that fails it | **no** |
+| 5 | execute `schema.sql` (`CREATE ... IF NOT EXISTS`) | missing objects only |
+| 6 | apply pending migrations, one transaction each | additive |
+
+A refusal therefore leaves the file's schema, rows and `user_version` exactly as
+they were. That ordering is what B17 fixed: startup previously ran `schema.sql`
+and eight normalisation `UPDATE`s on every open, before any integrity check and
+with no version guard.
+
+### Startup performs no data normalisation
+
+The corrections that used to run on every open — clearing mock broker sessions,
+clearing `AUTHORISED_LIVE`, relabelling demo market data, fundamentals, news,
+seeded strategies, the placeholder backtest and seeded job statuses — are now
+migration **v6**. It runs once, inside a transaction, and is recorded in
+`user_version`.
+
+Consequence, stated rather than hidden: a hand-edited
+`broker_connections.status = 'CONNECTED'` is no longer reset on startup. Nothing
+trusts that column — `executeOrder()` rejects a REAL portfolio before reading it,
+and the risk engine rejects REAL independently.
+
+### Migrations
+
 - v2 `users.is_disabled`; v3 `executions.realised_pnl`; v4 rebuilds
   `idempotency_keys` to fix its primary key (rows preserved); v5 adds
   `worker_heartbeats` and job-lock columns. All additive.
+- **v6 is the one migration that modifies existing rows**, and only rows this
+  project created (seeded ids, seeded labels, unsupported live flags).
+- `npm run db:init` reports the resolved path, the integrity result, the version
+  transition, every applied migration, and explicitly that no table was dropped
+  and no row deleted. It exits non-zero on either refusal.
+
+### Evidence
+
 - `tests/migration-safety.test.ts` builds a previous-release database, fills it,
-  upgrades it, and asserts every row and value survives; a second test proves the
+  upgrades it, and asserts every row and value survives; another test proves the
   migration is idempotent.
+- `tests/db-init-safety.test.ts` (9 tests, isolated files) proves:
+  a newer version is refused with **no** schema or row change (including through
+  the application startup path); an integrity-check failure causes **no**
+  migration writes and leaves v6 unapplied; a supported upgrade preserves user
+  portfolio values while correcting fixture labels; repeated initialisation
+  applies nothing and changes no row; and reopening through the app path does not
+  rewrite rows.
+
+### Other data-safety properties
+
 - The real database file was never reset, reseeded or destructively migrated.
 - Cash reconciliation no longer rewrites a balance silently; it writes an audited
   `CASH_RECONCILED` entry, and never touches a REAL portfolio.
@@ -268,8 +329,8 @@ state.
 
 ```
 $ npm test
- Test Files  23 passed (23)
-      Tests  248 passed (248)
+ Test Files  24 passed (24)
+      Tests  258 passed (258)
 
 $ npx tsc --noEmit
 (no output — clean)
@@ -287,8 +348,8 @@ $ npm audit
 9 vulnerabilities (2 moderate, 7 high)   # build-time only
 ```
 
-Baseline before this work: **17 files / 161 tests**. Net: **+6 files / +87 tests**
-(23 files, 248 tests).
+Baseline before this work: **17 files / 161 tests**. Net: **+7 files / +97 tests**
+(24 files, 258 tests).
 
 **Runtime smoke test** (production build, `next start`, isolated throwaway
 database, then the server was stopped and the file deleted):
@@ -302,6 +363,7 @@ database, then the server was stopped and the file deleted):
 | `POST /api/auth/login` with a 20 KB body | `413` |
 | `POST /api/auth/login` with `content-type: application/x-www-form-urlencoded` | `415` |
 | Response headers on `/` | CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`; **no** `Access-Control-Allow-Origin` |
+| `POST /api/auth/login` with the database at `user_version = 99` | `500`; server log shows `SchemaTooNewError`; the file still had `user_version = 99` and only the one pre-existing table afterwards |
 
 **Not proven by these numbers:** that the UI renders correctly, that keyboard and
 screen-reader navigation works, that CSRF is blocked in a real browser, or that

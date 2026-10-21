@@ -1,20 +1,36 @@
 /**
- * Initialises the configured database: schema, then additive migrations.
+ * Initialises the configured database.
  *
  *   npm run db:init
  *
- * This is SAFE to run against an existing database. It creates missing tables
- * and applies additive migrations; it never drops, truncates, reseeds or
- * rewrites existing rows. Seeding demo fixtures is a separate, explicit command
- * (`npm run db:seed`) and is intentionally not part of initialisation.
+ * What it does, in order, and nothing else:
  *
- * The target file is `INVESTPILOT_DB_PATH` (default ./data/investpilot.db). The
- * resolved path is printed so an operator can see exactly which database was
- * touched — especially useful before running anything against a real one.
+ *   1. reads `user_version` and refuses a database written by a newer release
+ *      (before any write at all);
+ *   2. runs `PRAGMA integrity_check` and refuses a database that fails it
+ *      (still before any write);
+ *   3. executes `schema.sql`, which only contains `CREATE ... IF NOT EXISTS`, so
+ *      it can add missing tables and indexes but never alter or drop one;
+ *   4. applies pending versioned migrations, each in a single transaction.
+ *
+ * It never deletes, truncates or reseeds. Migrations are additive, with one
+ * exception worth stating plainly: **v6 is a once-only data normalisation** that
+ * relabels demo fixture rows and disables live-mode flags. On a database that is
+ * already at the current version it does nothing at all.
+ *
+ * Demo fixtures are inserted only by the separate, explicit `npm run db:seed`.
  */
 import path from 'node:path';
-import { getDb } from './index';
-import { CURRENT_SCHEMA_VERSION } from './migrations';
+import Database from 'better-sqlite3';
+import {
+  CURRENT_SCHEMA_VERSION
+} from './migrations';
+import {
+  DatabaseIntegrityError,
+  SchemaTooNewError,
+  provisionDatabase,
+  readSchemaVersion
+} from './provision';
 
 function main() {
   const target = process.env.INVESTPILOT_DB_PATH
@@ -23,28 +39,55 @@ function main() {
 
   console.log(`Database target: ${target}`);
 
-  const db = getDb();
-  const version = Number(db.pragma('user_version', { simple: true }) ?? 0);
+  const db = new Database(target);
+  db.pragma('busy_timeout = 5000');
+  db.pragma('foreign_keys = ON');
 
-  if (version > CURRENT_SCHEMA_VERSION) {
-    console.error(
-      `This database is at schema version ${version}, but this build only understands ${CURRENT_SCHEMA_VERSION}. ` +
-        'Refusing to run — upgrade the application instead of downgrading the data.'
-    );
-    process.exitCode = 1;
-    return;
+  let result;
+  try {
+    result = provisionDatabase(db);
+  } catch (error) {
+    if (error instanceof SchemaTooNewError) {
+      console.error(error.message);
+      console.error('No schema change, migration or row update was performed.');
+      process.exitCode = 1;
+      return;
+    }
+    if (error instanceof DatabaseIntegrityError) {
+      console.error(error.message);
+      console.error('No schema change, migration or row update was performed.');
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
   }
 
-  const integrity = db.pragma('integrity_check', { simple: true });
-  if (integrity !== 'ok') {
-    console.error(`Integrity check failed: ${integrity}. Take a backup before proceeding.`);
-    process.exitCode = 1;
-    return;
+  const version = readSchemaVersion(db);
+
+  console.log(`Integrity check: ok`);
+  console.log(`Schema version: ${result.fromVersion} -> ${result.toVersion} (this build supports up to ${CURRENT_SCHEMA_VERSION})`);
+
+  if (result.applied.length === 0) {
+    console.log('Migrations applied: none — the database was already at the current version.');
+  } else {
+    console.log('Migrations applied:');
+    for (const entry of result.applied) console.log(`  - ${entry}`);
+    if (result.applied.some((entry) => entry.startsWith('v6'))) {
+      console.log(
+        '  (v6 performs a one-time data normalisation: demo-data provenance labels and disabled live/broker flags.)'
+      );
+    }
   }
 
-  console.log(`Schema is at version ${version} (current: ${CURRENT_SCHEMA_VERSION}).`);
-  console.log('Initialisation complete. No rows were modified or deleted.');
+  console.log(
+    result.baseSchemaApplied
+      ? 'Base schema: executed (CREATE ... IF NOT EXISTS only; no existing table, column or index was altered or dropped).'
+      : 'Base schema: skipped (src/db/schema.sql not found).'
+  );
+  console.log('Rows deleted or tables dropped: none.');
+  console.log(`Reported version after this run: ${version}.`);
   console.log('Demo fixtures are only inserted by the explicit `npm run db:seed` command.');
+  db.close();
 }
 
 main();
