@@ -329,16 +329,23 @@ any strategy is profitable. No manual exploratory testing session is claimed.
 `hardening/financial-integrity`. This session is pinned by the platform to
 `arena/de0ec973-stocks-agent`, and that pin forbids creating or pushing a
 differently named branch. The work was therefore published under the pinned name,
-and a self-contained git bundle plus a 16-patch series are provided alongside it
-so a reviewer can create `hardening/financial-integrity` locally with the exact
-same commit history:
+and a git bundle (verified to reproduce this tree exactly) plus a `format-patch`
+series are provided alongside it, so `hardening/financial-integrity` can be
+created locally with the same commit history:
 
 ```bash
-git clone <bundle> hardening-financial-integrity
+git clone --branch safety/agent-validation-first \
+  https://github.com/AtmikaNayak/stocks-agent.git hardening-financial-integrity
 cd hardening-financial-integrity
-git switch -c hardening/financial-integrity
+git fetch <path>/hardening-financial-integrity.bundle \
+  "refs/heads/arena/de0ec973-stocks-agent:refs/heads/hardening/financial-integrity"
+git checkout hardening/financial-integrity
 git rev-parse HEAD    # equals the published tip
 ```
+
+The bundle is a range bundle: it requires `417e2ec`, which is public because both
+`investpilot3.0` and `safety/agent-validation-first` point at it. The local clone
+is shallow (a platform limit), so a full-history bundle could not be produced.
 
 That is a faithful export, not a second publication: nothing was pushed under the
 `hardening/` name.
