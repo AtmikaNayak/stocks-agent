@@ -161,7 +161,7 @@ export default function VirtualPortfolioView({
           virtualPositions.length === 0 ? (
             <div className="py-12 text-center">
               <Layers className="h-8 w-8 text-ink-3 mx-auto mb-2" />
-              <p className="text-xs text-ink-2">You don't own any shares yet. A practice trade is the easiest way to start.</p>
+              <p className="text-xs text-ink-2">You don&apos;t own any shares yet. A practice trade is the easiest way to start.</p>
               <button
                 onClick={() => onOpenOrderModal()}
                 className="mt-3 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500"

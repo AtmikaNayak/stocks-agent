@@ -12,6 +12,23 @@ interface Props {
   onSuccess: () => void;
 }
 
+/** Closes on Escape and prevents the page behind the dialog from scrolling. */
+function useDialogBehaviour(isOpen: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen, onClose]);
+}
+
 export default function OrderModal({
   isOpen,
   portfolio,
@@ -37,6 +54,8 @@ export default function OrderModal({
       if (assets[0].price) setPrice(assets[0].price);
     }
   }, [preselectedAsset, assets]);
+
+  useDialogBehaviour(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -89,13 +108,24 @@ export default function OrderModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-xl border border-white/[0.12] bg-[#0f1420] p-6 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="order-modal-title"
+        className="relative w-full max-w-lg rounded-xl border border-white/[0.12] bg-[#0f1420] p-6 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <button
+          type="button"
           onClick={onClose}
+          aria-label="Close the practice-trade dialog"
           className="absolute right-4 top-4 text-ink-2 hover:text-white"
         >
-          <X className="h-5 w-5" />
+          <X className="h-5 w-5" aria-hidden="true" />
         </button>
 
         <div className="mb-4">
@@ -109,7 +139,9 @@ export default function OrderModal({
             >
               {portfolio.type === 'VIRTUAL' ? 'Practice' : 'Read-only'}
             </span>
-            <h2 className="text-lg font-bold text-white">Practise a trade</h2>
+            <h2 id="order-modal-title" className="text-lg font-bold text-white">
+              Practise a trade
+            </h2>
           </div>
           <p className="text-xs text-ink-2 mt-1">
             Using <strong className="text-ink">{portfolio.name}</strong> · cash available ₹{portfolio.current_cash.toLocaleString('en-IN')}
@@ -123,8 +155,11 @@ export default function OrderModal({
         )}
 
         {error && (
-          <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-200">
-            <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-950/40 p-3 text-xs text-red-200"
+          >
+            <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" aria-hidden="true" />
             <div>
               <strong>This order was blocked:</strong> {error}
             </div>
