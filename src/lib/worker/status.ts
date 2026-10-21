@@ -1,5 +1,6 @@
 import db from '../../db';
 import { workerScheduler } from './scheduler';
+import { HeartbeatRow, readHeartbeats } from './heartbeat';
 
 /**
  * Truthful worker reporting.
@@ -14,7 +15,12 @@ import { workerScheduler } from './scheduler';
  * show without turning it into a claim.
  */
 
-export type WorkerStatusValue = 'RUNNING_IN_PROCESS' | 'UNKNOWN';
+export type WorkerStatusValue =
+  | 'RUNNING_IN_PROCESS'
+  | 'RUNNING_EXTERNAL'
+  | 'STALE'
+  | 'STOPPED'
+  | 'UNKNOWN';
 
 export interface WorkerEvidence {
   /** Most recent `scheduled_jobs.last_run_at` value (UTC ISO string), or null. */
@@ -35,6 +41,14 @@ export interface WorkerStatusReport {
   /** Human-readable explanation safe to render directly in the UI. */
   summary: string;
   evidence: WorkerEvidence;
+  /** Newest heartbeat, when one exists. Never used to claim liveness by itself. */
+  heartbeat: {
+    workerId: string;
+    status: string;
+    lastBeatAt: string | null;
+    ageSeconds: number | null;
+    intervalSeconds: number;
+  } | null;
   uptimeSeconds: number;
 }
 
@@ -78,6 +92,8 @@ export function buildWorkerStatus(
     now?: number;
     jobs?: JobRow[];
     uptimeSeconds?: number;
+    /** Inject heartbeats in tests; omitted means "read the database". */
+    heartbeats?: HeartbeatRow[];
   } = {}
 ): WorkerStatusReport {
   const inProcessRunning = options.inProcessRunning ?? workerScheduler.isRunning;
@@ -85,6 +101,7 @@ export function buildWorkerStatus(
   const jobs = options.jobs ?? db.query<JobRow>(
     'SELECT job_name, interval_seconds, last_run_at, last_run_status FROM scheduled_jobs'
   );
+  const heartbeats = options.heartbeats ?? readHeartbeats();
   const uptimeSeconds = options.uptimeSeconds ?? Math.round(process.uptime());
 
   let latestRunAt: number | null = null;
@@ -112,6 +129,31 @@ export function buildWorkerStatus(
   const recentlyActive =
     latestRunAt !== null && now - latestRunAt <= windowSeconds * 1000 && latestRunAt <= now + 60_000;
 
+  // Newest heartbeat wins; a heartbeat is evidence of a live process only while
+  // it is fresh, and only when that process did not report STOPPED.
+  let newestBeat: { row: HeartbeatRow; parsed: number } | null = null;
+  for (const beat of heartbeats) {
+    const parsed = parseSqliteUtc(beat.last_beat_at) ?? Date.parse(beat.last_beat_at);
+    if (!Number.isFinite(parsed)) continue;
+    if (!newestBeat || parsed > newestBeat.parsed) newestBeat = { row: beat, parsed };
+  }
+
+  const heartbeat = newestBeat
+    ? {
+        workerId: newestBeat.row.worker_id,
+        status: newestBeat.row.status,
+        lastBeatAt: new Date(newestBeat.parsed).toISOString(),
+        ageSeconds: Math.max(0, Math.round((now - newestBeat.parsed) / 1000)),
+        intervalSeconds: Number(newestBeat.row.interval_seconds)
+      }
+    : null;
+
+  const heartbeatFresh =
+    heartbeat !== null &&
+    heartbeat.status === 'RUNNING' &&
+    heartbeat.ageSeconds !== null &&
+    heartbeat.ageSeconds <= Math.max(MIN_OBSERVATION_WINDOW_SECONDS, heartbeat.intervalSeconds * 3);
+
   const evidence: WorkerEvidence = {
     lastJobRunAt: latestRunAt === null ? null : new Date(latestRunAt).toISOString(),
     lastJobRunStatus: latestRunStatus,
@@ -119,21 +161,42 @@ export function buildWorkerStatus(
     observationWindowSeconds: windowSeconds
   };
 
-  const status: WorkerStatusValue = inProcessRunning ? 'RUNNING_IN_PROCESS' : 'UNKNOWN';
-  const summary = inProcessRunning
-    ? 'The scheduler is running inside this server process.'
-    : evidence.lastJobRunAt
-      ? `The scheduler is not running in this server process. The last recorded job run was ${evidence.lastJobRunAt}` +
-        (recentlyActive
-          ? `, which suggests a separate worker is alive, but that cannot be confirmed from here.`
-          : ` and no recent activity was observed.`)
-      : 'The scheduler is not running in this server process and no job has ever recorded a run, so worker state is unknown.';
+  let status: WorkerStatusValue;
+  let summary: string;
+
+  if (inProcessRunning) {
+    status = 'RUNNING_IN_PROCESS';
+    summary = 'The scheduler is running inside this server process.';
+  } else if (heartbeatFresh) {
+    status = 'RUNNING_EXTERNAL';
+    summary = `Worker ${heartbeat.workerId} last sent a heartbeat ${heartbeat.ageSeconds}s ago (interval ${heartbeat.intervalSeconds}s).`;
+  } else if (heartbeat && heartbeat.status === 'RUNNING') {
+    status = 'STALE';
+    summary =
+      `Worker ${heartbeat.workerId} has not sent a heartbeat for ${heartbeat.ageSeconds}s, ` +
+      `which is longer than its ${heartbeat.intervalSeconds}s interval. Its state cannot be confirmed.`;
+  } else if (heartbeat && heartbeat.status === 'STOPPED') {
+    status = 'STOPPED';
+    summary = `Worker ${heartbeat.workerId} reported a graceful shutdown at ${heartbeat.lastBeatAt}.`;
+  } else if (evidence.lastJobRunAt) {
+    status = 'UNKNOWN';
+    summary =
+      `The scheduler is not running in this server process. The last recorded job run was ${evidence.lastJobRunAt}` +
+      (recentlyActive
+        ? `, which suggests a separate worker is alive, but that cannot be confirmed from here.`
+        : ` and no recent activity was observed.`);
+  } else {
+    status = 'UNKNOWN';
+    summary =
+      'The scheduler is not running in this server process and no job has ever recorded a run, so worker state is unknown.';
+  }
 
   return {
     status,
     inProcessSchedulerRunning: inProcessRunning,
     summary,
     evidence,
+    heartbeat,
     uptimeSeconds
   };
 }

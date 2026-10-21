@@ -507,7 +507,11 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     last_run_at TEXT,
     last_run_status TEXT, -- 'SUCCESS', 'FAILED'
     last_run_message TEXT,
+    last_run_error_category TEXT,
     next_run_at TEXT,
+    -- Cross-process job lock. See src/lib/worker/scheduler.ts acquireJobLock().
+    locked_by TEXT,
+    locked_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -556,3 +560,17 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     PRIMARY KEY (user_id, scope, id)
 );
 CREATE INDEX IF NOT EXISTS idx_idempotency_expiry ON idempotency_keys(expires_at);
+
+-- 27. Worker Heartbeats
+-- Written by the scheduler (in-process or the `npm run worker` daemon). The API
+-- process reads this table to distinguish a live worker from a stale one; it
+-- never infers liveness from job history.
+CREATE TABLE IF NOT EXISTS worker_heartbeats (
+    worker_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'RUNNING', -- 'RUNNING' | 'STOPPED'
+    host TEXT,
+    pid INTEGER,
+    interval_seconds INTEGER NOT NULL,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_beat_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

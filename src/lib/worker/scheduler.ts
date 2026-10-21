@@ -1,12 +1,56 @@
 import db from '../../db';
 import marketData from '../market-data';
 import marketIntelligenceAgent from '../agents/market-intelligence';
+import { createWorkerId, HeartbeatController, startHeartbeat } from './heartbeat';
+
+/** A lock older than this is assumed abandoned (a crashed worker). */
+const JOB_LOCK_TTL_SECONDS = 15 * 60;
 
 export class BackgroundWorkerScheduler {
   private timer: NodeJS.Timeout | null = null;
+  private heartbeat: HeartbeatController | null = null;
   public isRunning = false;
+  public readonly workerId = createWorkerId();
+
+  /**
+   * Takes a cross-process lock on a job.
+   *
+   * SQLite has no SELECT ... FOR UPDATE, so the lock is a conditional UPDATE:
+   * exactly one writer can flip `locked_by` from NULL for a given row, which
+   * serialises the job across processes as well as within one. A stale lock
+   * (crashed worker) is reclaimed after JOB_LOCK_TTL_SECONDS.
+   */
+  private acquireJobLock(jobName: string): boolean {
+    const result = db.execute(
+      `UPDATE scheduled_jobs
+       SET locked_by = ?, locked_at = datetime('now')
+       WHERE job_name = ?
+         AND (locked_by IS NULL OR locked_at < datetime('now', '-' || ? || ' seconds'))`,
+      [this.workerId, jobName, JOB_LOCK_TTL_SECONDS]
+    );
+    return result.changes === 1;
+  }
+
+  private releaseJobLock(jobName: string): void {
+    db.execute(
+      "UPDATE scheduled_jobs SET locked_by = NULL, locked_at = NULL WHERE job_name = ? AND locked_by = ?",
+      [jobName, this.workerId]
+    );
+  }
 
   async runJob(jobName: string) {
+    if (!this.acquireJobLock(jobName)) {
+      const holder = db.queryOne<{ locked_by: string | null; locked_at: string | null }>(
+        'SELECT locked_by, locked_at FROM scheduled_jobs WHERE job_name = ?',
+        [jobName]
+      );
+      return {
+        success: false,
+        skipped: true,
+        error: `Job ${jobName} is already running (held by ${holder?.locked_by ?? 'another process'} since ${holder?.locked_at ?? 'unknown'}).`
+      };
+    }
+
     try {
       const nowStr = new Date().toISOString();
       let statusMessage = 'Completed successfully.';
@@ -113,7 +157,24 @@ export class BackgroundWorkerScheduler {
             [port.id]
           );
           if (sumRow && Math.abs(sumRow.total_ledger - port.current_cash) > 0.01) {
-            db.execute("UPDATE portfolios SET current_cash = ?, updated_at = datetime('now') WHERE id = ?", [sumRow.total_ledger, port.id]);
+            // The ledger is the source of truth for simulated cash, but a silent
+            // rewrite would destroy the evidence that a discrepancy existed.
+            const difference = Math.round((sumRow.total_ledger - port.current_cash) * 100) / 100;
+            db.writeTransaction((database) => {
+              database
+                .prepare("UPDATE portfolios SET current_cash = ?, updated_at = datetime('now') WHERE id = ? AND type = 'VIRTUAL'")
+                .run(sumRow.total_ledger, port.id);
+              database
+                .prepare(
+                  `INSERT INTO audit_logs (id, user_id, portfolio_id, action_type, actor, details, created_at)
+                   VALUES (?, NULL, ?, 'CASH_RECONCILED', 'WORKER', ?, datetime('now'))`
+                )
+                .run(
+                  `aud_recon_${port.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  port.id,
+                  `Ledger reconciliation adjusted simulated cash by ₹${difference.toFixed(2)} to match the sum of cash-ledger entries.`
+                );
+            });
             reconciled += 1;
           }
         }
@@ -136,10 +197,13 @@ export class BackgroundWorkerScheduler {
         UPDATE scheduled_jobs SET
           last_run_at = datetime('now'),
           last_run_status = 'FAILED',
-          last_run_message = ?
+          last_run_message = ?,
+          last_run_error_category = ?
         WHERE job_name = ?
-      `, [err.message, jobName]);
+      `, [err.message, categorizeError(err), jobName]);
       return { success: false, error: err.message };
+    } finally {
+      this.releaseJobLock(jobName);
     }
   }
 
@@ -156,6 +220,8 @@ export class BackgroundWorkerScheduler {
   start(intervalMs = 30000) {
     if (this.isRunning) return;
     this.isRunning = true;
+    // A heartbeat is what lets another process tell "running" from "stale".
+    this.heartbeat = startHeartbeat(intervalMs);
     console.log('🚀 Background Worker Scheduler started. Running periodic jobs every', intervalMs, 'ms');
     this.runAllJobs().catch(console.error);
     this.timer = setInterval(() => {
@@ -168,9 +234,21 @@ export class BackgroundWorkerScheduler {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.heartbeat?.stop();
+    this.heartbeat = null;
     this.isRunning = false;
     console.log('🛑 Background Worker Scheduler stopped.');
   }
+}
+
+/** Coarse, non-secret failure category for health reporting. */
+export function categorizeError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/SQLITE_BUSY|database is locked/i.test(message)) return 'DATABASE_LOCKED';
+  if (/SQLITE_|constraint|no such table/i.test(message)) return 'DATABASE_ERROR';
+  if (/ETIMEDOUT|network|fetch failed/i.test(message)) return 'NETWORK_ERROR';
+  if (/quota|rate limit/i.test(message)) return 'RATE_LIMITED';
+  return 'UNKNOWN';
 }
 
 export const workerScheduler = new BackgroundWorkerScheduler();

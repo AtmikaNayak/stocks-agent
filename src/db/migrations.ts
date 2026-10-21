@@ -20,7 +20,7 @@ import type Database from 'better-sqlite3';
  * regression test for exactly that (`tests/migration-safety.test.ts`).
  */
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 interface MigrationStep {
   version: number;
@@ -156,6 +156,34 @@ const STEPS: MigrationStep[] = [
         ALTER TABLE idempotency_keys_v4 RENAME TO idempotency_keys;
       `);
       db.exec('CREATE INDEX IF NOT EXISTS idx_idempotency_expiry ON idempotency_keys(expires_at);');
+    }
+  },
+  {
+    version: 5,
+    description: 'worker heartbeats and cross-process job locks',
+    up: (db) => {
+      // A heartbeat is the only honest way for the API process to know whether
+      // a separate worker daemon is alive. Job history alone proves that
+      // *something* ran once, not that it is running now.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS worker_heartbeats (
+          worker_id TEXT PRIMARY KEY,
+          status TEXT NOT NULL DEFAULT 'RUNNING', -- 'RUNNING' | 'STOPPED'
+          host TEXT,
+          pid INTEGER,
+          interval_seconds INTEGER NOT NULL,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          last_beat_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+
+      // Cross-process mutual exclusion so two worker processes (or an operator
+      // trigger racing the scheduler) cannot run the same job twice.
+      addColumnIfMissing(db, 'scheduled_jobs', 'locked_by', 'TEXT');
+      addColumnIfMissing(db, 'scheduled_jobs', 'locked_at', 'TEXT');
+
+      // Surface a failure category rather than only a free-text message.
+      addColumnIfMissing(db, 'scheduled_jobs', 'last_run_error_category', 'TEXT');
     }
   }
 ];
