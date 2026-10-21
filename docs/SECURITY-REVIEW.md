@@ -103,7 +103,13 @@ Reviewed for SQL/path/secret content: it contains user-facing reasons and
 amounts only. A future contributor could leak something through it.
 *Status: convention documented in `src/lib/errors.ts`.*
 
-**L-4 — Login responses differ in latency for existing vs unknown accounts.**
+**L-4 — Login buffered an unbounded request body.** `request.json()` read the
+whole body before any size check, on the one endpoint reachable without a
+session. Fixed: the body is now read with a hard 16 KB cap that cancels the
+stream, and the endpoint returns 415/413 like every other write. *Status: fixed,
+regression-tested.*
+
+**L-5 — Login responses differ in latency for existing vs unknown accounts.**
 A dummy hash is verified for unknown users, which removes the obvious oracle,
 but a database lookup difference remains. *Status: accepted.*
 
@@ -113,7 +119,7 @@ Run in this repository, on the commit that includes this document:
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Unit/integration suite | `npm test` | 23 files, 241 tests passing |
+| Unit/integration suite | `npm test` | 23 files, 245 tests passing |
 | Type check | `npm run typecheck` | clean |
 | Lint | `npm run lint` | 0 errors, 5 pre-existing hook warnings |
 | Production build | `npm run build` | succeeds |

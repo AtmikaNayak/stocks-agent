@@ -293,14 +293,14 @@ INVESTPILOT_DB_PATH=./restored.db npm run db:init
 npm test
 ```
 
-Current result: **23 test files, 241 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
+Current result: **23 test files, 245 tests passing.** (Update this count if you change the suite — it is asserted by review, not by a test.)
 
 | Area | File |
 | --- | --- |
 | Concurrency, idempotency, CNC/MIS, oversell, rollback, quote validation, trading window | `tests/execution-integrity.test.ts` |
 | Risk limits and thresholds | `tests/risk-engine.test.ts` |
 | REAL/virtual isolation, forged prices, quantities | `tests/execution-isolation.test.ts` |
-| Sessions, revocation, disablement, CSRF, body hygiene | `tests/session-lifecycle.test.ts` |
+| Sessions, revocation, disablement, CSRF, body hygiene (18) | `tests/session-lifecycle.test.ts` |
 | Authentication boundary, forged tokens, throttling | `tests/auth-session.test.ts`, `tests/login-rate-limit.test.ts` |
 | Cross-user access (reads and writes) | `tests/authz-ownership.test.ts` |
 | Operator-only actions | `tests/operator-permissions.test.ts` |

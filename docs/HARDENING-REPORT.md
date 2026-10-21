@@ -3,7 +3,7 @@
 **Repository:** `AtmikaNayak/stocks-agent`
 **Branch of record:** `arena/de0ec973-stocks-agent`
 **Base commit:** `417e2ec` ("Report worker state truthfully and validate proxy IPs strictly")
-**Head at time of writing:** `d203d32`
+**Head at time of writing:** `668671f`
 **Date:** 2026-10-21
 **Product scope:** demo / paper-trading only. No real money, no broker adapter, no
 live market data.
@@ -93,10 +93,12 @@ Found by reading the code, then confirmed with failing tests before fixing.
 | B13 | `getMarketSessionStatus` did its own UTC+5:30 arithmetic | Wrong day across the IST rollover; disagreed with the risk engine |
 | B14 | `npm run db:init` pointed at a file that did not exist; `npm run lint` used `next lint` (removed in Next 16) | Two shipped scripts simply failed |
 | B15 | Tests shared the demo database; agent validation queried for "assets without fundamentals" | A legitimate test asset polluted an unrelated assertion |
+| B16 | `readJsonBody` read the whole body before checking its length; login bypassed it entirely with `request.json()` | The one unauthenticated endpoint buffered an arbitrarily large body and skipped the content-type check |
 
 ## 4. Changes made
 
-Seven commits. Each was type-checked, linted and tested before being committed.
+Eleven commits. Each was type-checked and tested before being committed; `lint`
+only existed from `8637f15` onwards and has passed since.
 
 | SHA | Change |
 | --- | --- |
@@ -107,10 +109,14 @@ Seven commits. Each was type-checked, linted and tested before being committed.
 | `bb80866` | Bounded backtest inputs, unknown symbol/strategy rejection, candle quarantine, per-user quotas, same-bar look-ahead fixed. |
 | `22ae206` | Worker heartbeat table, `RUNNING_EXTERNAL`/`STALE`/`STOPPED` states, cross-process job lock with TTL reclaim, error categories, audited cash reconciliation. |
 | `d203d32` | Default-deny provider registry; `/api/market` exposes provider inventory and holiday-calendar status. |
+| `8637f15` | Tooling, CI and documentation repairs: `db:init` entry point that did not exist, `next lint` that no longer exists, CI that only ran on two branch names, README rewritten against the code. |
+| `c1f312b` | Market-session status delegates to the shared exchange calendar (IST rollover bug, invented `POST_CLOSE`). |
+| `b22cd78` | Trade dialog gets real dialog semantics; unescaped entity fixed. |
+| `668671f` | Login body bounded before buffering; login now enforces JSON content-type and size like every other write. |
 
-Uncommitted at the time of writing (this document): README rewrite, `.env.example`
-additions, CI workflow, ESLint flat config, `src/db/init.ts`, the exchange-session
-delegation fix, and an accessibility pass on the trade dialog.
+The later four commits are tooling and documentation repairs plus two defects
+found during the final review pass (the IST rollover in the market-session status
+and the unbounded login body).
 
 ### The two bookkeeping fixes in detail
 
@@ -132,7 +138,7 @@ write, so it can no longer credit cash without moving shares.
 
 | # | Requirement | Status | Evidence / gap |
 | --- | --- | --- | --- |
-| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 241 tests |
+| 1 | Inspect existing system before changing it | `COMPLETE` | Baseline recorded in §3; 161 → 245 tests |
 | 2 | Make order execution atomic | `COMPLETE` | `tests/execution-integrity.test.ts` (26) |
 | 3 | Eliminate stale-snapshot double spend | `COMPLETE` | Concurrent-execution test |
 | 4 | Product-type-correct positions (CNC/MIS) | `COMPLETE` | CNC-vs-MIS tests |
@@ -245,7 +251,7 @@ state.
 ```
 $ npm test
  Test Files  23 passed (23)
-      Tests  241 passed (241)
+      Tests  245 passed (245)
 
 $ npx tsc --noEmit
 (no output — clean)
@@ -263,7 +269,7 @@ $ npm audit
 9 vulnerabilities (2 moderate, 7 high)   # build-time only
 ```
 
-Baseline before this work: **17 files / 161 tests**. Net: **+6 files, +80 tests**.
+Baseline before this work: **17 files / 161 tests**. Net: **+6 files, +84 tests**.
 
 **Not proven by these numbers:** that the UI renders correctly, that keyboard and
 screen-reader navigation works, that CSRF is blocked in a real browser, or that
@@ -276,7 +282,7 @@ any strategy is profitable. No manual exploratory testing session is claimed.
 | Base commit | `417e2ec` |
 | Base branch | untouched |
 | Working branch | `arena/de0ec973-stocks-agent` |
-| Commits added | 7 (`3dbb736`, `bbcd9da`, `b552804`, `25271f7`, `bb80866`, `22ae206`, `d203d32`) |
+| Commits added | 11 (`3dbb736`, `bbcd9da`, `b552804`, `25271f7`, `bb80866`, `22ae206`, `d203d32`, `8637f15`, `c1f312b`, `b22cd78`, `668671f`) |
 | Force-push | none |
 | History rewrite | none |
 | Branch deletion | none |
